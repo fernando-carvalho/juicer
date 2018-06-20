@@ -58,6 +58,7 @@ if __name__ == '__main__':
                                  juicer_config,
                                  args.lang, args.jars)
         elif args.type == 'compss':
+            # log.info('Starting COMPSs Minion')
             minion = COMPSsMinion(redis_conn,
                                   args.workflow_id,
                                   args.app_id or args.workflow_id,

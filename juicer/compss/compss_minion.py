@@ -27,6 +27,9 @@ from juicer.compss.transpiler import COMPSsTranspiler
 from juicer.util import dataframe_util
 from juicer.workflow.workflow import Workflow
 
+from juicer.compss.COMPSsEnvGenerator import *
+
+
 logging.config.fileConfig('logging_config.ini')
 log = logging.getLogger('juicer.compss.compss_minion')
 
@@ -35,7 +38,7 @@ locales_path = os.path.join(os.path.dirname(__file__), '..', 'i18n', 'locales')
 
 class COMPSsMinion(Minion):
     """
-    Controls the execution of Spark code in Lemonade Juicer.
+    Controls the execution of COMPSs code in Lemonade Juicer.
     """
 
     # max idle time allowed in seconds until this minion self termination
@@ -44,6 +47,7 @@ class COMPSsMinion(Minion):
     MSG_PROCESSED = 'message_processed'
 
     def __init__(self, redis_conn, workflow_id, app_id, config, lang='en'):
+        """Initialize the minion."""
         Minion.__init__(self, redis_conn, workflow_id, app_id, config)
 
         self.terminate_proc_queue = multiprocessing.Queue()
@@ -55,7 +59,6 @@ class COMPSsMinion(Minion):
         self.config = config
 
         self.transpiler = COMPSsTranspiler(config)
-
         configuration.set_config(self.config)
 
         self.tmp_dir = self.config.get('config', {}).get('tmp_dir', '/tmp')
@@ -70,6 +73,8 @@ class COMPSsMinion(Minion):
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.job_future = None
 
+        self.compss_config = config['juicer'].get('compss', {})
+        self.lib_path = self.compss_config['functions_lib']
         # self termination timeout
         self.active_messages = 0
         self.self_terminate = True
@@ -199,7 +204,7 @@ class COMPSsMinion(Minion):
         try:
             loader = Workflow(workflow, self.config)
 
-            # force the spark context creation
+            # force the compss context creation
             self.get_or_create_compss_session(loader, app_configs)
 
             # Mark job as running
@@ -215,6 +220,9 @@ class COMPSsMinion(Minion):
             generated_code_path = os.path.join(
                 self.tmp_dir, '{}.py'.format(module_name))
 
+            app_tar_path = os.path.join(
+                self.tmp_dir, '{}.tar.gz'.format(module_name))
+
             with codecs.open(generated_code_path, 'w', 'utf8') as out:
                 self.transpiler.transpile(
                     loader.workflow, loader.graph, {}, out, job_id)
@@ -223,12 +231,59 @@ class COMPSsMinion(Minion):
             if os.path.isfile('{}c'.format(generated_code_path)):
                 os.remove('{}c'.format(generated_code_path))
 
-            # Here code is loaded in Python executor
-            # self.module = importlib.import_module(module_name)
-            # self.module = imp.reload(self.module)
-            if log.isEnabledFor(logging.debug):
-                log.debug('Objects in memory after loading module: %s',
-                          len(gc.get_objects()))
+            # Setting the project and resource xml files
+            docker_image = self.compss_config.get('docker_image',
+                                                  'lucasmsp/compssbase:2.0')
+            configs_envCOMPSs = {}
+            configs_envCOMPSs['MinimumVMs'] = \
+                self.compss_config.get('MinimumVMs', 1)
+            configs_envCOMPSs['MaximumVMs'] = \
+                self.compss_config.get('MaximumVMs', 8)
+            configs_envCOMPSs['image'] = docker_image
+            configs_envCOMPSs['Application'] = app_tar_path
+            configs_envCOMPSs['instances'] =  \
+                self.compss_config.get('instances', ['small', 'medium'])
+
+            generated_project = os.path.join(
+                self.tmp_dir, '{}_project.xml'.format(module_name))
+            with codecs.open(generated_project, 'w', 'utf8') as out:
+                generateProject(configs_envCOMPSs, out)
+
+            generated_resources = os.path.join(
+                self.tmp_dir, '{}_resources.xml'.format(module_name))
+            with codecs.open(generated_resources, 'w', 'utf8') as out:
+                generateResources(configs_envCOMPSs, out)
+
+            # Compress the files and the lib in a tar
+            make_tarfile(app_tar_path,
+                         generated_code_path,
+                         generated_project,
+                         generated_resources,
+                         self.lib_path)
+
+            # Launch the COMPSs docker container
+            import subprocess
+            proc = subprocess.Popen(['docker', 'run', '-id', docker_image],
+                                    stdout=subprocess.PIPE)
+            containerID = proc.stdout.read()[0:15]
+
+            command = 'sh -c "/opt/COMPSs/Runtime/scripts/user/runcompss -v"'
+            output_log = os.path.join(
+                self.tmp_dir, '{}_output.log'.format(module_name))
+            with open(output_log, "w") as output:
+                proc = subprocess.Popen(['docker', 'exec', '-it',
+                                         containerID, 'sh', '-c',
+                                         command], stdout=output)
+
+
+            # usar o runcompss
+
+            # # Here code is loaded in Python executor
+            # # self.module = importlib.import_module(module_name)
+            # # self.module = imp.reload(self.module)
+            # if log.isEnabledFor(logging.debug):
+            #     log.debug('Objects in memory after loading module: %s',
+            #               len(gc.get_objects()))
 
             # Starting execution. At this point, the transpiler have created a
             # module with a main function that receives a spark_session and the

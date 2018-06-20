@@ -40,7 +40,6 @@ class Workflow(object):
 
         # Construct graph
         self._build_initial_workflow_graph()
-        self._build_privacy_restrictions()
 
         # Topological sorted tasks according to their dependencies
         self.sorted_tasks = []
@@ -48,6 +47,9 @@ class Workflow(object):
 
         # Spark or COMPSs
         self.platform = workflow_data.get('platform', {}).get('slug', 'spark')
+
+        if self.platform == 'spark':
+            self._build_privacy_restrictions()
 
         # Verify null edges to topological_sorted_tasks
         if self.is_there_null_target_id_tasks() \

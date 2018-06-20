@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys
 
 class Expression:
     def __init__(self, json_code, params):
@@ -14,13 +13,13 @@ class Expression:
         self.imports = ""
         self.parsed_expression = "lambda col: " + self.parse(json_code, params)
 
-
-
     def parse(self, tree, params):
 
         if tree['type'] == 'BinaryExpression':
             result = "{} {} {}".format(
-                self.parse(tree['left'], params), tree['operator'], self.parse(tree['right'], params))
+                self.parse(tree['left'], params),
+                tree['operator'],
+                self.parse(tree['right'], params))
 
         # Literal parsing
         elif tree['type'] == 'Literal':
@@ -29,12 +28,15 @@ class Expression:
 
         # Expression parsing
         elif tree['type'] == 'CallExpression':
+            if tree['callee']['name'] not in self.functions:
+                raise ValueError(_('Function {f}() does not exists.').format(
+                    f=tree['callee']['name']))
             result = self.functions[tree['callee']['name']](tree, params)
 
         # Identifier parsing
         elif tree['type'] == 'Identifier':
             if 'input' in params:
-                result = "{}['{}']".format('col', tree['name'])#params['input'], tree['name'])
+                result = "{}['{}']".format('col', tree['name'])
             else:
                 result = "functions.col['{}']".format(tree['name'])
 
@@ -42,16 +44,20 @@ class Expression:
         elif tree['type'] == 'UnaryExpression':
             if tree['operator'] == '!':
                 tree['operator'] = '~'
-                result = "({} {})".format(tree['operator'],  self.parse(tree['argument'], params))
+                result = "({} {})".format(tree['operator'],
+                                          self.parse(tree['argument'], params))
 
         elif tree['type'] == 'LogicalExpression':
-            operators = { "&&": "&", "||": "|", "!": "~"   }
+            operators = {"&&": "&", "||": "|", "!": "~"}
             operator = operators[tree['operator']]
-            result = "({}) {} ({})".format(self.parse(tree['left'], params), operator,
+            result = "({}) {} ({})".format(self.parse(tree['left'], params),
+                                           operator,
                                            self.parse(tree['right'], params))
 
         elif tree['type'] == 'ConditionalExpression':
-            spec = {'arguments': [ tree['test'], tree['consequent'], tree['alternate'] ]}
+            spec = {'arguments': [tree['test'],
+                                  tree['consequent'],
+                                  tree['alternate']]}
             result = self.get_when_function(spec, params)
 
         else:
@@ -59,121 +65,123 @@ class Expression:
 
         return result
 
-
     def get_numpy_function_call(self, spec, params):
         """
         Wrap column name with col() function call, if such call is not present.
         """
-        callee = spec['arguments'][0].get('callee', {})
         # Evaluates if column name is wrapped in a col() function call
-        arguments = ', '.join([self.parse(x, params) for x in spec['arguments']])
+        arguments = ', '.join([self.parse(x, params)
+                               for x in spec['arguments']])
         function_name = spec['callee']['name']
         result = " np.{}({})".format(function_name, arguments)
         return result
 
+    def get_function_call(self, spec, params):
+        """
+        Wrap column name with col() function call, if such call is not present.
+        """
+        # Evaluates if column name is wrapped in a col() function call
+        arguments = ', '.join([self.parse(x, params) for x in spec['arguments']])
+        action = spec['callee']['name']
+
+        action = self.translate_functions.get(action, action)
+        result = " {}({})".format(action, arguments)
+        return result
 
     def get_date_function_call(self, spec, params):
         """
         Wrap column name with col() function call, if such call is not present.
         """
-        callee = spec['arguments'][0].get('callee', {})
-        function = spec['callee']['name']
-        function = self.translate_functions[function] if function in self.translate_functions else function
+        action = spec['callee']['name']
+        action = self.translate_functions.get(action, action)
         # Evaluates if column name is wrapped in a col() function call
         args = [self.parse(x, params) for x in spec['arguments']]
-        #origin = args[0]
 
         arguments = ', '.join(args)
 
-        result = " {}({})".format(function, arguments)
+        result = " {}({})".format(action, arguments)
         return result
 
     def get_date_instance_function_call(self, spec, params):
         """
         Wrap column name with col() function call, if such call is not present.
         """
-        callee = spec['arguments'][0].get('callee', {})
-        function = spec['callee']['name']
-        if function in self.imports_functions:
-            imp = self.imports_functions[function] + "\n"
+        action = spec['callee']['name']
+        if action in self.imports_functions:
+            imp = self.imports_functions[action] + "\n"
             if imp not in self.imports:
-                self.imports +=  imp
+                self.imports += imp
         # Evaluates if column name is wrapped in a col() function call
         args = [self.parse(x, params) for x in spec['arguments']]
         origin = args[0]
 
         arguments = ', '.join(args[1:])
 
-        result = " {}.{}({})".format(origin, function, arguments)
+        action = self.translate_functions.get(action, action)
+        result = " {}.{}({})".format(origin, action, arguments)
         return result
-
 
     def get_window_function(self, spec, params):
         """
             Window function: group a datetime in bins
         """
-        callee = spec['arguments'][0].get('callee', {})
-        function = spec['callee']['name']
-        if function in self.imports_functions:
-            imp = self.imports_functions[function] + "\n"
+        action = spec['callee']['name']
+        if action in self.imports_functions:
+            imp = self.imports_functions[action] + "\n"
             if imp not in self.imports:
-                self.imports +=  imp
+                self.imports += imp
         args = [self.parse(x, params) for x in spec['arguments']]
         bins_size = args[1]
-        var_date    = args[0]
+        var_date = args[0]
 
         result = "group_datetime(col[{date}], {bins_size})"\
-            .format(date = var_date, bins_size = bins_size)
+            .format(date=var_date, bins_size=bins_size)
 
         return result
 
-
     def get_strip_accents_function(self, spec, params):
-        callee = spec['arguments'][0].get('callee', {})
-        function = spec['callee']['name']
-        if function in self.imports_functions:
-            imp = self.imports_functions[function] + "\n"
+        action = spec['callee']['name']
+        if action in self.imports_functions:
+            imp = self.imports_functions[action] + "\n"
             if imp not in self.imports:
-                self.imports +=  imp
-        arguments = ', '.join([self.parse(x, params) for x in spec['arguments']])
-        result = " ''.join(c for c in unicodedata.normalize('NFD', unicode({})) if unicodedata.category(c) != 'Mn')".format(arguments)
+                self.imports += imp
+        arguments = ', '.join([self.parse(x, params)
+                               for x in spec['arguments']])
+        result = \
+            " ''.join(c for c in unicodedata.normalize('NFD', unicode({}))" \
+            " if unicodedata.category(c) != 'Mn')".format(arguments)
 
         return result
 
     def get_strip_punctuation_function(self, spec, params):
-        callee = spec['arguments'][0].get('callee', {})
         function = spec['callee']['name']
         if function in self.imports_functions:
             imp = self.imports_functions[function] + "\n"
             if imp not in self.imports:
-                self.imports +=  imp
+                self.imports += imp
         # Evaluates if column name is wrapped in a col() function call
-        arguments = ', '.join([self.parse(x, params) for x in spec['arguments']])
+        arguments = ', '.join([self.parse(x, params)
+                               for x in spec['arguments']])
         strip_punctuation = ".translate(None, string.punctuation)"
-        result = '{}{}'.format(arguments,strip_punctuation )
+        result = '{}{}'.format(arguments, strip_punctuation )
         return result
 
-
     def convertToPandas_function(self, spec, params):
-       # callee = spec['arguments'][0].get('callee', {})
-        #function = spec['callee']['name']
-
         # Evaluates if column name is wrapped in a col() function call
-        arguments = ', '.join([self.parse(x, params) for x in spec['arguments']])
+        arguments = ', '.join([self.parse(x, params)
+                               for x in spec['arguments']])
 
         result = '{}'.format(arguments)
         return result
 
-
     def build_functions_dict(self):
-
-
         numpy_functions = {
             # ----- Mathematical operations -------#
-            # See more at: https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html
+            # See more at:
+            # https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html
 
             #   *   Trigonometric functions:
-            'sin':	self.get_numpy_function_call, #Trigonometric sine, element-wise.
+            'sin':	self.get_numpy_function_call,  # Trigonometric sine, element-wise.
             'cos':	self.get_numpy_function_call, #	Cosine element-wise.
             'tan':	self.get_numpy_function_call, #	Compute tangent element-wise.
             'arcsin':	self.get_numpy_function_call, #	Inverse sine, element-wise.
@@ -238,12 +246,10 @@ class Expression:
 
 
             # --------- String operations ---------#
-            # See more at: https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.char.html
+            # See more at:
+            # https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.char.html
 
             #   *   String operations
-            'add':          self.get_numpy_function_call, #	Return element-wise string concatenation for two arrays of str or unicode.
-            'multiply':     self.get_numpy_function_call, #	Return (a * i), that is string multiple concatenation, element-wise.
-            'mod':          self.get_numpy_function_call, #	Return (a % i), that is pre-Python 2.6 string formatting (iterpolation), element-wise for a pair of array_likes of str or unicode.
             'capitalize':   self.get_numpy_function_call, #	Return a copy of a with only the first character of each element capitalized.
             'center':   self.get_numpy_function_call, #	Return a copy of a with its elements centered in a string of length width.
             'decode':   self.get_numpy_function_call, #	Calls str.decode element-wise.
@@ -279,100 +285,126 @@ class Expression:
 
 
             # --------- Logic operations ----------#
-            # See more at: https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.logic.html
+            # See more at:
+            # https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.logic.html
 
             #   *   Logical operations
-            'logical_and':  self.get_numpy_function_call, #	Compute the truth value of x1 AND x2 element-wise.
-            'logical_or':   self.get_numpy_function_call, #	Compute the truth value of x1 OR x2 element-wise.
-            'logical_not':  self.get_numpy_function_call, #	Compute the truth value of NOT x element-wise.
-            'logical_xor':  self.get_numpy_function_call, #	Compute the truth value of x1 XOR x2, element-wise.
+            'logical_and':  self.get_numpy_function_call,  # Compute the truth value of x1 AND x2 element-wise.
+            'logical_or':   self.get_numpy_function_call,  # Compute the truth value of x1 OR x2 element-wise.
+            'logical_not':  self.get_numpy_function_call,  # Compute the truth value of NOT x element-wise.
+            'logical_xor':  self.get_numpy_function_call,  # Compute the truth value of x1 XOR x2, element-wise.
 
 
             #   *   Comparison
-            'array_equiv':      self.get_numpy_function_call, #	Returns True if input arrays are shape consistent and all elements equal.
-            'equal':            self.get_numpy_function_call, #	Return (x1 == x2) element-wise.
-            'not_equal':        self.get_numpy_function_call, #	Return (x1 != x2) element-wise.
-            'greater_equal':    self.get_numpy_function_call, #	Return (x1 >= x2) element-wise.
-            'less_equal':       self.get_numpy_function_call, #	Return (x1 <= x2) element-wise.
-            'greater':          self.get_numpy_function_call, #	Return (x1 > x2) element-wise.
-            'less':             self.get_numpy_function_call, #	Return (x1 < x2) element-wise.
+            'array_equiv':      self.get_numpy_function_call,  # Returns True if input arrays are shape consistent and all elements equal.
+            'equal':            self.get_numpy_function_call,  # Return (x1 == x2) element-wise.
+            'not_equal':        self.get_numpy_function_call,  # Return (x1 != x2) element-wise.
+            'greater_equal':    self.get_numpy_function_call,  # Return (x1 >= x2) element-wise.
+            'less_equal':       self.get_numpy_function_call,  # Return (x1 <= x2) element-wise.
+            'greater':          self.get_numpy_function_call,  # Return (x1 > x2) element-wise.
+            'less':             self.get_numpy_function_call,  # Return (x1 < x2) element-wise.
 
         }
 
-
         date_functions = {
-
             #  -------- Date and time operations
-            # See more at: https://docs.python.org/2/library/datetime.html
+            # See more at:
+            # https://docs.python.org/2/library/datetime.html
 
             'timedelta':        self.get_date_function_call,
 
             'str2time':         self.get_date_function_call,
 
-            'date':             self.get_date_function_call, #  All arguments are required
-            'today':            self.get_date_function_call, #  Return the current local date.
-            'now':              self.get_date_function_call, #  Return the current local date and time.
-            'utcnow':           self.get_date_function_call, #  Return the current UTC date and time, with tzinfo None.
-            'fromtimestamp':    self.get_date_function_call, #  Return the local date and time corresponding to the POSIX timestamp, such as is returned by time.time()
-            'utcfromtimestamp': self.get_date_function_call, #  Return the UTC datetime corresponding to the POSIX timestamp, with tzinfo None.
-            'fromordinal':      self.get_date_function_call, #  Return the datetime corresponding to the proleptic Gregorian ordinal, where January 1 of year 1 has ordinal 1.
-            'combine':          self.get_date_function_call, #  Return a new datetime object whose date components are equal to the given date object’s, and whose time components and tzinfo attributes are equal to the given time object’s.
+            # For example, date(2002, 12, 4)
+            'date': self.get_date_function_call,
+
+            # Return the current local date.
+            'today':            self.get_date_function_call,
+
+            # Return the current local date and time.
+            'now':              self.get_date_function_call,
+
+            # Return the current UTC date and time, with tzinfo None.
+            'utcnow':           self.get_date_function_call,
+            'fromtimestamp':    self.get_date_function_call,  # Return the local date and time corresponding to the POSIX timestamp, such as is returned by time.time()
+            'utcfromtimestamp': self.get_date_function_call,  # Return the UTC datetime corresponding to the POSIX timestamp, with tzinfo None.
+            'fromordinal':      self.get_date_function_call,  # Return the datetime corresponding to the proleptic Gregorian ordinal, where January 1 of year 1 has ordinal 1.
+            'combine':          self.get_date_function_call,  # Return a new datetime object whose date components are equal to the given date object’s, and whose time components and tzinfo attributes are equal to the given time object’s.
 
 
         }
 
-
         date_instance_functions = {
             #  -------- Date and time operations
-            # See more at: https://docs.python.org/2/library/datetime.html
+            # See more at:
+            # https://docs.python.org/2/library/datetime.html
 
-            'toordinal':        self.get_date_instance_function_call, # 	Return the proleptic Gregorian ordinal of the date, where January 1 of year 1 has ordinal 1. For any date object d, date.fromordinal(d.toordinal()) == d.
-            'weekday':          self.get_date_instance_function_call, # 	Return the day of the week as an integer, where Monday is 0 and Sunday is 6. For example, date(2002, 12, 4).weekday() == 2, a Wednesday. See also isoweekday().
-            'isoweekday':       self.get_date_instance_function_call, # 	Return the day of the week as an integer, where Monday is 1 and Sunday is 7. For example, date(2002, 12, 4).isoweekday() == 3, a Wednesday. See also weekday(), isocalendar().
-            'isoformat':        self.get_date_instance_function_call, # 	For a date d, str(d) is equivalent to d.isoformat()
-            'replace':          self.get_date_instance_function_call, #     Return a date with the same value, except for those parameters given new values by whichever keyword arguments are specified.
-            'total_seconds':    self.get_date_instance_function_call, #     Return the total number of seconds contained in the duration.
+            # Return the proleptic Gregorian ordinal of the date,
+            # where January 1 of year 1 has ordinal 1.
+            # For any date object d, date.fromordinal(d.toordinal()) == d.
+            'toordinal': self.get_date_instance_function_call,
+
+            # Return the day of the week as an integer, where Monday is 0
+            # and Sunday is 6. For example, date(2002, 12, 4). weekday() == 2,
+            # a Wednesday. See also isoweekday().
+            'weekday': self.get_date_instance_function_call,
+
+            # Return the day of the week as an integer, where Monday is 1
+            # and Sunday is 7.
+            # For example, date(2002, 12, 4).isoweekday() == 3, a Wednesday.
+            'isoweekday': self.get_date_instance_function_call,
+
+            # For a date d, str(d) is equivalent to d.isoformat()
+            'isoformat': self.get_date_instance_function_call,
+
+            # Return a date with the same value, except for those
+            # parameters given new values by whichever keyword
+            # arguments are specified.
+            'replace': self.get_date_instance_function_call,
+
+            # Return the total number of seconds contained in the duration.
+            'total_seconds': self.get_date_instance_function_call,
+
+            # Convert datetime to date
+            'datetime2date': self.get_date_instance_function_call,
         }
 
         self.functions.update(numpy_functions)
         self.functions.update(date_functions)
         self.functions.update(date_instance_functions)
 
-
         translate_date_functions = {
 
-            'timedelta':        'datetime.timedelta',
-
-            'str2time':         'parser.parse',
-
-            'date:':            'datetime.date',
-            'today':            'date.today',
-            'now':              'datetime.now',
-            'utcnow':           'datetime.utcnow',
-            'fromtimestamp':    'date.fromtimestamp',
+            'datetime2date': 'date',
+            'timedelta': 'datetime.timedelta',
+            'str2time': 'parser.parse',
+            # 'date': 'datetime.date',
+            'today': 'date.today',
+            # 'now': 'datetime.now',
+            'utcnow': 'datetime.utcnow',
+            'fromtimestamp': 'date.fromtimestamp',
             'utcfromtimestamp': 'date.utcfromtimestamp',
-            'fromordinal':      'date.fromordinal',
-            'combine':          'date.combine',
+            'fromordinal': 'date.fromordinal',
+            'combine': 'date.combine',
 
 
         }
         self.translate_functions.update(translate_date_functions)
 
         self.imports_functions = {
-            "str2time":             "from dateutil import parser",
-            "strip_accents":        "import unicodedata",
-            "strip_punctuation":    "import string",
+            "str2time": "from dateutil import parser",
+            "strip_accents": "import unicodedata",
+            "strip_punctuation": "import string",
 
         }
 
-
         # Functions that does not exist in Python, but can be implemented as a
-        #lambda function. For now, and due simplicity, we require that every
+        # lambda function. For now, and due simplicity, we require that every
         # custom function is necessarily defined here.
         custom_functions = {
-            'group_datetime':       self.get_window_function,
-            'strip_accents':        self.get_strip_accents_function,
-            'strip_punctuation':    self.get_strip_punctuation_function,
-            # 'col':                  self.convertToPandas_function,
+            'group_datetime': self.get_window_function,
+            'strip_accents': self.get_strip_accents_function,
+            'strip_punctuation': self.get_strip_punctuation_function,
+            'str': self.get_function_call
         }
         self.functions.update(custom_functions)
