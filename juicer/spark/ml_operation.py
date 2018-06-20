@@ -87,8 +87,8 @@ class FeatureIndexerOperation(Operation):
                 {input}_without_null = {input}.na.fill(
                     'NA', subset=col_alias.keys())
 
-                {out} = pipeline.fit({input}_without_null)\\
-                    .transform({input}_without_null)
+                {out} = pipeline.fit({input}_without_null).transform(
+                    {input}_without_null)
             """.format(input=input_data, out=output, models=models,
                        alias=json.dumps(zip(self.attributes, self.alias),
                                         indent=None)))
@@ -123,6 +123,15 @@ class FeatureIndexerOperation(Operation):
 
         code += dedent(
             """
+            # Update metadata information (may be used in other operations)
+            for k, v in col_alias.items():
+                field_metadata = {out}.schema[str(v)].metadata
+                if not 'lemon_attr' in field_metadata:
+                    field_metadata['lemon_attr'] = {}
+                field_metadata['lemon_attr']['indexed_from'] = k
+                {out} = {out}.withColumn(
+                    v, functions.col(v).alias('', metadata=field_metadata))
+
             # Store indexer models in cache. Some operations may need to use
             # them. If an indexer is created more than once for attributes with
             # the same name, the last executed will overwrite the previous one.
@@ -131,7 +140,7 @@ class FeatureIndexerOperation(Operation):
                 cached_state['indexers'] = {{}}
             for name, model in {models}.items():
                 cached_state['indexers'][name] = model
-        """.format(models=models))
+        """.format(models=models, out=output))
 
         return code
 

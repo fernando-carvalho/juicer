@@ -11,6 +11,17 @@ import simplejson
 import types
 
 
+# noinspection PyProtectedMember
+# noinspection PyProtectedMember
+def add_metadata(column, alias, meta):
+    from pyspark import SparkContext
+    sc = SparkContext._active_spark_context
+    from pyspark.sql import Column
+    jmeta = sc._gateway.jvm.org.apache.spark.sql.types.Metadata
+    return Column(
+        getattr(column._jc, "as")(alias, jmeta.fromJson(json.dumps(meta))))
+
+
 def is_numeric(schema, col):
     return isinstance(schema[str(col)].dataType, spark_types.NumericType)
 
