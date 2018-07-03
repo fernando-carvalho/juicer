@@ -127,7 +127,7 @@ class FeatureIndexerOperation(Operation):
             for k, v in col_alias.items():
                 field_metadata = {out}.schema[str(v)].metadata
                 if not 'lemon_attr' in field_metadata:
-                    field_metadata['lemon_attr'] = {}
+                    field_metadata['lemon_attr'] = {{}}
                 field_metadata['lemon_attr']['indexed_from'] = k
                 {out} = {out}.withColumn(
                     v, functions.col(v).alias('', metadata=field_metadata))
