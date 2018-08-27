@@ -12,9 +12,10 @@ import os
 import redis
 import requests
 import yaml
-from juicer.compss.transpiler import COMPSsTranspiler
 from juicer.runner import configuration
 from juicer.spark.transpiler import SparkTranspiler
+from juicer.sklearn.transpiler import SklearnTranspiler
+from juicer.compss.transpiler import COMPSsTranspiler
 from juicer.workflow.workflow import Workflow
 
 logging.config.fileConfig('logging_config.ini')
@@ -86,6 +87,8 @@ class JuicerSparkService:
                 transpiler = SparkTranspiler(configuration.get_config())
             elif loader.platform == "compss":
                 transpiler = COMPSsTranspiler(configuration.get_config())
+            elif loader.platform == "scikit-learn":
+                transpiler = SklearnTranspiler(configuration.get_config())
             else:
                 raise ValueError(
                     _('Invalid platform value: {}').format(loader.platform))

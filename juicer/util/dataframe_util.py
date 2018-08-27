@@ -5,7 +5,6 @@ import json
 import datetime
 import pyspark.sql.types as spark_types
 from pyspark.ml.linalg import DenseVector
-
 import re
 import simplejson
 import types
@@ -51,11 +50,23 @@ def get_csv_schema(df, only_name=False):
     return ','.join(get_schema_fmt(df, only_name))
 
 
+def get_csv_schema_sklearn(df, only_name=False):
+    return ','.join(get_schema_fmt_sklearn(df, only_name))
+
+
 def get_schema_fmt(df, only_name=False):
     if only_name:
         return [f.name for f in df.schema.fields]
     else:
         return ['{}:{}'.format(f.dataType, f.name) for f in df.schema.fields]
+
+
+def get_schema_fmt_sklearn(df, only_name=False):
+    if only_name:
+        return list(df.columns)
+    else:
+        return ['{}:{}'.format(i, str(f))
+                for i, f in zip(df.columns, df.dtypes)]
 
 
 def get_dict_schema(df):
@@ -148,7 +159,24 @@ def emit_schema(task_id, df, emit_event, name):
                task={'id': task_id})
 
 
+def emit_schema_sklearn(task_id, df, emit_event, name):
+    from juicer.spark.reports import SimpleTableReport
+    headers = [_('Attribute'), _('Type')]
+    rows = [[i, str(f)] for i, f in zip(df.columns, df.dtypes)]
+    content = SimpleTableReport(
+        'table table-striped table-bordered', headers, rows,
+        _('Schema for {}').format(name),
+        numbered=True)
+
+    emit_event('update task', status='COMPLETED',
+               identifier=task_id,
+               message=content.generate(),
+               type='HTML', title=_('Schema for {}').format(name),
+               task={'id': task_id})
+
+
 def emit_sample(task_id, df, emit_event, name, size=50):
+
     from juicer.spark.reports import SimpleTableReport
     headers = [f.name for f in df.schema.fields]
 
@@ -179,6 +207,48 @@ def emit_sample(task_id, df, emit_event, name, size=50):
         'table table-striped table-bordered', headers, rows,
         _('Sample data for {}').format(name),
         numbered=True)
+
+    emit_event('update task', status='COMPLETED',
+               identifier=task_id,
+               message=content.generate(),
+               type='HTML', title=_('Sample data for {}').format(name),
+               task={'id': task_id})
+
+
+def emit_sample_sklearn(task_id, df, emit_event, name, size=50):
+    from juicer.spark.reports import SimpleTableReport
+    headers = list(df.columns)
+
+    number_types = (types.IntType, types.LongType,
+                    types.FloatType, types.ComplexType, decimal.Decimal)
+
+    rows = []
+
+    for row in df.head(size).values:
+        new_row = []
+        rows.append(new_row)
+        for col in row:
+            if isinstance(col, str):
+                value = col
+            elif isinstance(col, unicode):
+                value = col
+            elif isinstance(col, (datetime.datetime, datetime.date)):
+                value = col.isoformat()
+            elif isinstance(col, number_types):
+                value = str(col)
+            else:
+                value = json.dumps(col, cls=CustomEncoder)
+            # truncate column if size is bigger than 200 chars.
+            if len(value) > 200:
+                value = value[:150] + ' ... ' + value[-50:]
+            new_row.append(value)
+
+    #print (headers)
+    print (rows)
+    content = SimpleTableReport(
+            'table table-striped table-bordered', headers, rows,
+            _('Sample data for {}').format(name),
+            numbered=True)
 
     emit_event('update task', status='COMPLETED',
                identifier=task_id,
@@ -285,6 +355,7 @@ def merge_dicts(x, y):
 
 def handle_spark_exception(e):
     from pyspark.sql.utils import AnalysisException, IllegalArgumentException
+
     result = False
     if isinstance(e, AnalysisException):
         value_expr = re.compile(r'[`"](.+)[`"].+columns:\s(.+)$')
@@ -322,16 +393,17 @@ def handle_spark_exception(e):
                     attr=attr, used=used, correct=correct
                 ))
     elif hasattr(e, 'java_exception'):
-        cause = e.java_exception.getCause()
-        while cause is not None and cause.getCause() is not None:
+        cause = e.java_exception
+        while cause.getCause() is not None:
             cause = cause.getCause()
 
+        myse = 'com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException'
         if cause is not None:
             nfe = 'java.lang.NumberFormatException'
-            uoe = 'java.lang.UnsupportedOperationException'
             npe = 'java.lang.NullPointerException'
             bme = 'org.apache.hadoop.hdfs.BlockMissingException'
-
+            myce = 'com.mysql.jdbc.exceptions.jdbc4.CommunicationsException'
+            faee = 'org.apache.hadoop.mapred.FileAlreadyExistsException'
             cause_msg = cause.getMessage()
             inner_cause = cause.getCause()
             if cause.getClass().getName() == nfe and cause_msg:
@@ -350,6 +422,13 @@ def handle_spark_exception(e):
                                        'Please, remove them before applying '
                                        'a data transformation.'))
                 pass
+            elif e.java_exception.getClass().getName() == myce:
+                raise ValueError(
+                    _('Unable to connect to MySQL while reading data source.'))
+            elif cause.getClass().getName() == faee:
+                raise ValueError(_('File already exist. Use an option to '
+                                   'override it (if it is possible) and if you '
+                                   'want to replace it.'))
             elif cause.getClass().getName() == bme:
                 raise ValueError(
                     _('Cannot read data from the data source. In this case, '
@@ -357,13 +436,17 @@ def handle_spark_exception(e):
                       'Please, check if HDFS namenode is up and you '
                       'correctly configured the option '
                       'dfs.client.use.datanode.hostname in Juicer\' config.'))
-        elif e.java_exception.getMessage():
-            value_expr = re.compile(r'CSV data source does not support '
-                                    r'(.+?) data type')
-            value = value_expr.findall(e.java_exception.getMessage())
-            if value:
+            elif cause.getClass().getName() == myse:
                 raise ValueError(
-                    _('CSV format does not support the data type {}. '
-                      'Try to convert the attribute to string (see to_json()) '
-                      'before saving.'.format(value[0])))
+                    _('Syntax error querying data in MySQL: {}').format(
+                        e.java_exception.getMessage()))
+            elif cause.getMessage():
+                value_expr = re.compile(r'CSV data source does not support '
+                                        r'(.+?) data type')
+                value = value_expr.findall(e.java_exception.getMessage())
+                if value:
+                    raise ValueError(
+                        _('CSV format does not support the data type {}. '
+                          'Try to convert the attribute to string '
+                          '(see to_json()) before saving.'.format(value[0])))
     return result

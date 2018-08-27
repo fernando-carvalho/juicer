@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 # noinspection PyCompatibility
 from concurrent.futures import TimeoutError
 from juicer.runner import configuration
-from juicer.runner import juicer_protocol
+from juicer.runner import protocol as juicer_protocol
 
 from juicer.runner.minion_base import Minion
 from juicer.spark.transpiler import SparkTranspiler
@@ -434,7 +434,8 @@ class SparkMinion(Minion):
 
             with codecs.open(generated_code_path, 'w', 'utf8') as out:
                 self.transpiler.transpile(
-                    loader.workflow, loader.graph, {}, out, job_id)
+                    loader.workflow, loader.graph, {}, out, job_id,
+                    self._state)
 
             # Get rid of .pyc file if it exists
             if os.path.isfile('{}c'.format(generated_code_path)):

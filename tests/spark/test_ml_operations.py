@@ -10,6 +10,8 @@ import pytest
 from juicer.runner import configuration
 from juicer.spark.ml_operation import FeatureIndexerOperation, \
     FeatureAssemblerOperation, \
+    OneHotEncoderOperation, \
+    IndexToStringOperation, \
     ApplyModelOperation, EvaluateModelOperation, \
     CrossValidationOperation, ClassificationModelOperation, \
     ClassifierOperation, SvmClassifierOperation, \
@@ -51,7 +53,7 @@ def test_feature_indexer_operation_success():
     expected_code = dedent("""
         col_alias = dict(tuple({alias}))
         indexers = [feature.StringIndexer(inputCol=col, outputCol=alias,
-                            handleInvalid='skip')
+                            handleInvalid='keep')
                     for col, alias in col_alias.items()]
 
         # Use Pipeline to process all attributes once
@@ -125,6 +127,40 @@ def test_feature_indexer_vector_missing_attribute_param_operation_failure():
         n_out = {'output data': 'output_1'}
         FeatureIndexerOperation(params, named_inputs=n_in,
                                 named_outputs=n_out)
+
+
+def test_feature_indexer_missing_attribute_failure():
+    params = {
+        FeatureIndexerOperation.TYPE_PARAM: 'vector',
+        FeatureIndexerOperation.ALIAS_PARAM: 'c',
+        FeatureIndexerOperation.MAX_CATEGORIES_PARAM: 20,
+    }
+
+    n_in = {'input data': 'input_1'}
+    n_out = {'output data': 'output_1', 'indexer models': 'models'}
+
+    with pytest.raises(ValueError):
+        instance = FeatureIndexerOperation(params, named_inputs=n_in,
+                                           named_outputs=n_out)
+
+
+def test_feature_indexer_output_names_success():
+    params = {
+
+        FeatureIndexerOperation.TYPE_PARAM: 'vector',
+        FeatureIndexerOperation.ATTRIBUTES_PARAM: ['col'],
+        FeatureIndexerOperation.ALIAS_PARAM: 'c',
+        FeatureIndexerOperation.MAX_CATEGORIES_PARAM: 20,
+    }
+
+    n_in = {'input data': 'input_1'}
+    n_out = {'output data': 'output_1', 'indexer models': 'models'}
+
+    instance = FeatureIndexerOperation(params, named_inputs=n_in,
+                                       named_outputs=n_out)
+    assert instance.get_data_out_names() == n_out['output data']
+    assert instance.get_output_names() == ','.join([n_out['output data'],
+                                                    n_out['indexer models']])
 
 
 def test_feature_indexer_vector_operation_success():
@@ -204,6 +240,129 @@ def test_feature_indexer_operation_failure():
         n_out = {'output data': 'output_1'}
         FeatureIndexerOperation(params, named_inputs=n_in,
                                 named_outputs=n_out)
+
+
+'''
+IndexToStringOperation tests
+'''
+
+
+def test_index_to_string_missing_required_failure():
+    params = {}
+    with pytest.raises(ValueError) as e:
+        n_in = {'input data': 'input_1'}
+        n_out = {'output data': 'output_1'}
+        IndexToStringOperation(params, named_inputs=n_in,
+                               named_outputs=n_out)
+    assert IndexToStringOperation.ATTRIBUTES_PARAM in str(e)
+
+    params[IndexToStringOperation.ATTRIBUTES_PARAM] = 'name'
+    with pytest.raises(ValueError) as e:
+        n_in = {'input data': 'input_1'}
+        n_out = {'output data': 'output_1'}
+        IndexToStringOperation(params, named_inputs=n_in,
+                               named_outputs=n_out)
+    assert IndexToStringOperation.ORIGINAL_NAMES_PARAM in str(e)
+
+
+def test_index_to_string_success():
+    params = {
+        IndexToStringOperation.ATTRIBUTES_PARAM: ['name'],
+        IndexToStringOperation.ORIGINAL_NAMES_PARAM: ['original'],
+        IndexToStringOperation.ALIAS_PARAM: 'new_name',
+    }
+    n_in = {'input data': 'input_1'}
+    n_out = {'output data': 'output_1'}
+    instance = IndexToStringOperation(params, named_inputs=n_in,
+                                      named_outputs=n_out)
+    code = instance.generate_code()
+    expected_code = dedent("""
+            original_names = {original}
+            col_alias = dict([["{features}", "{alias}"]])
+            converter = [feature.IndexToString(
+                inputCol=col, outputCol=alias, labels=[])
+                     for i, (col, alias) in enumerate(col_alias.items())]
+            pipeline = Pipeline(stages=converter)
+
+            {output_1} = pipeline.fit({input_1}).transform({input_1})
+            """.format(
+        features=params[IndexToStringOperation.ATTRIBUTES_PARAM][0],
+        output_1=n_out['output data'],
+        input_1=n_in['input data'],
+        original=json.dumps(
+            params[IndexToStringOperation.ORIGINAL_NAMES_PARAM]),
+        alias=params[IndexToStringOperation.ALIAS_PARAM],
+    ))
+
+    result, msg = compare_ast(ast.parse(code), ast.parse(expected_code))
+
+    assert result, msg + format_code_comparison(code, expected_code)
+
+
+'''
+OneHotEncoderOperation tests
+'''
+
+
+def test_one_hot_encoder_missing_required_failure():
+    params = {}
+    with pytest.raises(ValueError) as e:
+        n_in = {'input data': 'input_1'}
+        n_out = {'output data': 'output_1'}
+        OneHotEncoderOperation(params, named_inputs=n_in,
+                               named_outputs=n_out)
+    assert OneHotEncoderOperation.ATTRIBUTES_PARAM in str(e)
+
+
+def test_one_hot_encoder_success():
+    params = {
+        OneHotEncoderOperation.ATTRIBUTES_PARAM: ['name'],
+        OneHotEncoderOperation.ALIAS_PARAM: 'new_name',
+    }
+    n_in = {'input data': 'input_1'}
+    n_out = {'output data': 'output_1'}
+    instance = OneHotEncoderOperation(params, named_inputs=n_in,
+                                      named_outputs=n_out)
+    code = instance.generate_code()
+    expected_code = dedent("""
+            col_alias = dict([["{features}", "{alias}"]])
+            encoders = [feature.OneHotEncoder(
+                inputCol=col, outputCol=alias, dropLast=True)
+                     for (col, alias) in col_alias.items()]
+            pipeline = Pipeline(stages=encoders)
+
+            {output_1} = pipeline.fit({input_1}).transform({input_1})
+            """.format(
+        features=params[OneHotEncoderOperation.ATTRIBUTES_PARAM][0],
+        output_1=n_out['output data'],
+        input_1=n_in['input data'],
+        alias=params[OneHotEncoderOperation.ALIAS_PARAM],
+    ))
+
+    result, msg = compare_ast(ast.parse(code), ast.parse(expected_code))
+
+    assert result, msg + format_code_comparison(code, expected_code)
+
+
+def test_one_hot_encoder_output_names_success():
+    params = {
+
+        OneHotEncoderOperation.ATTRIBUTES_PARAM: ['col'],
+        OneHotEncoderOperation.ALIAS_PARAM: 'c',
+    }
+
+    n_in = {'input data': 'input_1'}
+    n_out = {'output data': 'output_1'}
+
+    instance = OneHotEncoderOperation(params, named_inputs=n_in,
+                                      named_outputs=n_out)
+    assert instance.get_data_out_names() == n_out['output data']
+    assert instance.get_output_names() == n_out['output data']
+
+    instance = OneHotEncoderOperation(params, named_inputs={},
+                                      named_outputs={})
+    assert instance.get_data_out_names() == 'out_task_1'
+    assert instance.get_output_names() == 'out_task_1'
 
 
 '''
@@ -532,10 +691,10 @@ def test_cross_validation_partial_operation_success():
 
             evaluator = evaluation.MulticlassClassificationEvaluator(
                 predictionCol='prediction',
-                labelCol='{label}',
+                labelCol=label_col,
                 metricName='{metric}')
 
-            estimator.setLabelCol('{label}')
+            estimator.setLabelCol(label_col)
             estimator.setPredictionCol('prediction')
 
             cross_validator = tuning.CrossValidator(
@@ -596,10 +755,10 @@ def test_cross_validation_complete_operation_success():
 
             evaluator = evaluation.MulticlassClassificationEvaluator(
                 predictionCol='prediction',
-                labelCol='{label}',
+                labelCol=label_col,
                 metricName='{metric}')
 
-            estimator.setLabelCol('{label}')
+            estimator.setLabelCol(label_col)
             estimator.setPredictionCol('prediction')
 
             cross_validator = tuning.CrossValidator(
@@ -657,13 +816,20 @@ def test_classification_model_operation_success():
 
     }
     n_in = {'algorithm': 'algo_param', 'train input data': 'train'}
-    n_out = {'model': 'model_1'}
+    n_out = {'model': 'model_1', 'output': 'out_classification'}
     instance = ClassificationModelOperation(params, named_inputs=n_in,
                                             named_outputs=n_out)
 
     code = instance.generate_code()
 
     expected_code = dedent("""
+        emit = functools.partial(
+                emit_event, name='update task',
+                status='RUNNING', type='TEXT',
+                identifier='{task_id}',
+                operation={{'id': {operation_id}}}, operation_id={operation_id},
+                task={{'id': '{task_id}'}},
+                title='{title}')
         alg, param_grid, metrics = {algorithm}
 
         params = dict([(p.name, v) for p, v in
@@ -677,9 +843,78 @@ def test_classification_model_operation_success():
 
 
         algorithm.setPredictionCol('{prediction}')
-        algorithm.setLabelCol('{label}')
-        algorithm.setFeaturesCol('{features}')
-        {output} = algorithm.fit({train})
+        requires_pipeline = False
+        stages = []
+        features = {features}
+        keep_at_end = [c.name for c in {train}.schema]
+        keep_at_end.append('{prediction}')
+
+        to_assemble = []
+        if len(features) > 1 and not isinstance(
+            {train}.schema[str(features[0])].dataType, VectorUDT):
+            emit(message='{msg0}')
+            for f in features:
+                if not dataframe_util.is_numeric({train}.schema, f):
+                    name = f + '_tmp'
+                    to_assemble.append(name)
+                    stages.append(feature.StringIndexer(
+                        inputCol=f, outputCol=name, handleInvalid='keep'))
+                else:
+                    to_assemble.append(f)
+
+            # Remove rows with null (VectorAssembler doesn't support it)
+            cond = ' AND '.join(['{{}} IS NOT NULL '.format(c)
+                for c in to_assemble])
+            stages.append(SQLTransformer(
+                statement='SELECT * FROM __THIS__ WHERE {{}}'.format(cond)))
+
+            final_features = 'features_tmp'
+            stages.append(feature.VectorAssembler(
+                inputCols=to_assemble, outputCol=final_features))
+            requires_pipeline = True
+        else:
+            final_features = features[0]
+
+        requires_revert_label = False
+        if not dataframe_util.is_numeric({train}.schema, '{label}'):
+            emit(message='{msg1}')
+            final_label = '{label}_tmp'
+            stages.append(feature.StringIndexer(
+                        inputCol='{label}', outputCol=final_label,
+                        handleInvalid='keep'))
+            requires_pipeline = True
+            requires_revert_label = True
+        else:
+            final_label = '{label}'
+
+        if requires_pipeline:
+            algorithm.setLabelCol(final_label)
+            algorithm.setFeaturesCol(final_features)
+            if requires_revert_label:
+                algorithm.setPredictionCol('{prediction}_tmp')
+
+            stages.append(algorithm)
+
+            pipeline = Pipeline(stages=stages)
+            {model} = pipeline.fit({train})
+
+            last_stages = [{model}]
+            if requires_revert_label:
+                # Map indexed label to original value
+                last_stages.append(IndexToString(inputCol='{prediction}_tmp',
+                    outputCol='{prediction}',
+                    labels={model}.stages[-2].labels))
+
+            # Remove temporary columns
+            sql = 'SELECT {{}} FROM __THIS__'.format(', '.join(keep_at_end))
+            last_stages.append(SQLTransformer(statement=sql))
+
+            pipeline = Pipeline(stages=last_stages)
+            {model} = pipeline.fit({train})
+        else:
+            algorithm.setLabelCol(final_label)
+            algorithm.setFeaturesCol(final_features)
+            {model} = algorithm.fit({train})
 
         setattr(model_1, 'ensemble_weights', [1.0])
 
@@ -687,7 +922,7 @@ def test_classification_model_operation_success():
         def call_transform(df):
             return model_1.transform(df)
         out_task_1 = dataframe_util.LazySparkTransformationDataframe(
-            {output}, {train}, call_transform)
+            {model}, {train}, call_transform)
 
         display_text = True
         if display_text:
@@ -700,22 +935,27 @@ def test_classification_model_operation_success():
 
             result = '<h4>Generated classification model parameters</h4>'
 
-            emit_event(
-                'update task', status='COMPLETED',
-                identifier='a7asf788',
-                message=result + content.generate(),
-                type='HTML', title='Generated classification model parameters',
-                task={{'id': 'a7asf788'}},
-                operation={{'id': 200}},
-                operation_id=200)
+            emit(status='COMPLETED', message=result + content.generate(),
+                type='HTML', title='Generated classification model parameters')
 
-        """.format(output=n_out['model'],
+        """.format(model=n_out['model'],
+                   output=n_out['output'],
                    train=n_in['train input data'],
                    algorithm=n_in['algorithm'],
+                   msg0=_(
+                       'Features are not assembled as a vector. They will be '
+                       'implicitly assembled and rows with null values will be '
+                       'discarded. If this is undesirable, explicitly add a '
+                       'feature assembler in the workflow.'),
+                   msg1=_('Label attribute is categorical, it will be '
+                          'implicitly indexed as string.'),
+                   task_id=params['task_id'],
+                   operation_id=params['operation_id'],
+                   title=_('Generated classification model parameters'),
                    prediction=params[
                        ClassificationModelOperation.PREDICTION_ATTRIBUTE_PARAM],
-                   features=params[
-                       ClassificationModelOperation.FEATURES_ATTRIBUTE_PARAM],
+                   features=repr(params[
+                                     ClassificationModelOperation.FEATURES_ATTRIBUTE_PARAM]),
                    label=params[
                        ClassificationModelOperation.LABEL_ATTRIBUTE_PARAM]))
 
@@ -970,10 +1210,10 @@ def test_clustering_model_operation_success():
         'operation_id': 343
 
     }
-    named_inputs = {'algorithm': 'df_1',
+    named_inputs = {'algorithm': 'algorithm1',
                     'train input data': 'df_2'}
     named_outputs = {'output data': 'output_1',
-                     'model': 'output_2'}
+                     'model': 'output_model'}
     outputs = ['output_1']
 
     instance = ClusteringModelOperation(params, named_inputs=named_inputs,
@@ -982,30 +1222,80 @@ def test_clustering_model_operation_success():
     code = instance.generate_code()
 
     expected_code = dedent("""
-        {algorithm}.setFeaturesCol('{features}')
-        if hasattr(df_1, 'setPredictionCol'):
-            df_1.setPredictionCol('prediction')
-        {model} = {algorithm}.fit({input})
-        setattr({model}, 'features', '{features}')
+        emit = functools.partial(
+                emit_event, name='update task',
+                status='RUNNING', type='TEXT',
+                identifier='{task_id}',
+                operation={{'id': {operation_id}}}, operation_id={operation_id},
+                task={{'id': '{task_id}'}},
+                title='{title}')
+
+        alg = {algorithm}
+
+        # Clone the algorithm because it can be used more than once
+        # and this may cause concurrency problems
+        params = dict([(p.name, v) for p, v in
+            alg.extractParamMap().items()])
+        algorithm_cls = globals()[alg.__class__.__name__]
+        algorithm = algorithm_cls()
+        algorithm.setParams(**params)
+        features = {features}
+        requires_pipeline = False
+
+        stages = [] # record pipeline stages
+        if len(features) > 1 and not isinstance(
+            {input}.schema[str(features[0])].dataType, VectorUDT):
+            emit(message='{msg2}')
+            for f in features:
+                if not dataframe_util.is_numeric({input}.schema, f):
+                    raise ValueError('{msg1}')
+
+            # Remove rows with null (VectorAssembler doesn't support it)
+            cond = ' AND '.join(['{{}} IS NOT NULL '.format(c)
+                for c in features])
+            stages.append(SQLTransformer(
+                statement='SELECT * FROM __THIS__ WHERE {{}}'.format(cond)))
+            final_features = 'features_tmp'
+            stages.append(feature.VectorAssembler(
+                inputCols=features, outputCol=final_features))
+            requires_pipeline = True
+
+        else:
+            # If more than 1 vector is passed, use only the first
+            final_features = features[0]
+
+        algorithm.setFeaturesCol(final_features)
+
+        if hasattr(algorithm, 'setPredictionCol'):
+            algorithm.setPredictionCol('prediction')
+
+        stages.append(algorithm)
+        pipeline = Pipeline(stages=stages)
+        pipeline_model = pipeline.fit(df_2)
+        {model} = pipeline_model
+        setattr({model}, 'features', u'f')
 
         # Lazy execution in case of sampling the data in UI
         def call_transform(df):
-            return output_2.transform(df)
+            if requires_pipeline:
+                return pipeline_model.transform(df).drop(final_features)
+            else:
+                return pipeline_model.transform(df)
         output_1 = dataframe_util.LazySparkTransformationDataframe(
-             output_2, df_2, call_transform)
+             {model}, df_2, call_transform)
 
-        summary = getattr(output_2, 'summary', None)
+        summary = getattr({model}, 'summary', None)
         def call_clusters(df):
-            if hasattr(output_2, 'clusterCenters'):
+            if hasattr({model}, 'clusterCenters'):
                 return spark_session.createDataFrame(
                     [center.tolist()
-                        for center in output_2.clusterCenters()])
+                        for center in {model}.clusterCenters()])
             else:
                 return spark_session.createDataFrame([],
                     types.StructType([]))
 
         centroids_task_1 = dataframe_util.LazySparkTransformationDataframe(
-            output_2, df_2, call_clusters)
+            {model}, df_2, call_clusters)
 
         if summary:
             summary_rows = []
@@ -1033,8 +1323,16 @@ def test_clustering_model_operation_success():
                    output=outputs[0],
                    operation_id=params['operation_id'],
                    task_id=params['task_id'],
-                   features=params[
-                       ClusteringModelOperation.FEATURES_ATTRIBUTE_PARAM]))
+                   title=_("Clustering result"),
+                   features=repr(params[
+                       ClusteringModelOperation.FEATURES_ATTRIBUTE_PARAM]),
+                   msg1=_('Regression only support numerical features.'),
+                   msg2=_('Features are not assembled as a vector. '
+                          'They will be implicitly assembled and rows with '
+                          'null values will be discarded. If this is '
+                          'undesirable, explicitly add a feature assembler '
+                          'in the workflow.'),
+                   ))
 
     result, msg = compare_ast(ast.parse(code), ast.parse(expected_code))
 

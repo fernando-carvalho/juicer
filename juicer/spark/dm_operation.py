@@ -118,7 +118,6 @@ class AssociationRulesOperation(Operation):
 
     def generate_code(self):
         code = u"""
-            from pyspark.sql import DataFrame
             try:
                 ext_pkg = spark_session._jvm.br.ufmg.dcc.lemonade.ext.fpm
                 associative_impl = ext_pkg.LemonadeAssociativeRules()

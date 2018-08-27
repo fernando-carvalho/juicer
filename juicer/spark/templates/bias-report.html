@@ -46,7 +46,7 @@
                     </tr>
                     <tr>
                         <th>{{ _('Fairness Threshold') }}:</th>
-                        <td colspan="3">{{ "{tau:,.2f}".format(tau=tau*100) }}%. {{ _('If disparity for a group is within {tau:,.2f}% and {inverse_tau:,.2f}% of the value of the reference group on a group metric (e.g. False Positive Rate), this audit will pass.').format(tau=tau, inverse_tau=100/tau) }}</td>
+                        <td colspan="3">{{ "{tau:,.2f}".format(tau=tau*100) }}%. {{ _('If disparity for a group is within {tau:,.2f}%% and {inverse_tau:,.2f}%% of the value of the reference group on a group metric (e.g. False Positive Rate), this audit will pass.').format(tau=tau, inverse_tau=100/tau) }}</td>
                     </tr>
                 </table>
             </div>

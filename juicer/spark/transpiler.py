@@ -94,51 +94,12 @@ class DependencyController:
         return True  # len(self.requires[_id].difference(self._satisfied)) == 0
 
 
-class SparkTranspilerVisitor:
-    def __init__(self):
-        pass
-
-    def visit(self, workflow, sorted_tasks, operations, params):
-        raise NotImplementedError()
-
-
-class ValidateAttributeReferencesVisitor(SparkTranspilerVisitor):
-    def visit(self, workflow, sorted_tasks, operations, params):
-        pass
-
-
-class RemoveTasksWhenMultiplexingVisitor(SparkTranspilerVisitor):
-    def visit(self, workflow, sorted_tasks, operations, params):
-        return None
-        # external_input_op = juicer.spark.ws_operation.MultiplexerOperation
-        # for task_id in graph.node:
-        #     task = graph.node[task_id]
-        #     op = operations.get(task.get('operation').get('slug'))
-        #     if op == external_input_op:
-        #         # Found root
-        #         if params.get('service'):
-        #             # Remove the left side of the tree
-        #             # left_side_flow = [f for f in workflow['flows']]
-        #             flow = graph.in_edges(task_id, data=True)
-        #             # pdb.set_trace()
-        #             # remove other side
-        #             pass
-        #         else:
-        #             flow = [f for f in graph['flows'] if
-        #                     f['target_id'] == task.id and f[
-        #                         'target_port_name'] == 'input data 2']
-        #             if flow:
-        #                 pdb.set_trace()
-        #             pass
-        # return graph
-
-
 class SparkTranspiler(object):
     """
     Convert Lemonada workflow representation (JSON) into code to be run in
     Apache Spark.
     """
-    VISITORS = [RemoveTasksWhenMultiplexingVisitor]
+    VISITORS = []
 
     def __init__(self, configuration):
         self.operations = {}
@@ -174,7 +135,8 @@ class SparkTranspiler(object):
         return '{}{}'.format(name, seq)
 
     # noinspection SpellCheckingInspection
-    def transpile(self, workflow, graph, params, out=None, job_id=None):
+    def transpile(self, workflow, graph, params, out=None, job_id=None,
+                  state=None):
         """ Transpile the tasks from Lemonade's workflow into Spark code """
 
         using_stdout = out is None
@@ -287,6 +249,14 @@ class SparkTranspiler(object):
             parameters['order'] = i
 
             parameters['task'] = task
+            if state is None or state.get(task_id) is None:
+                parameters['execution_date'] = None
+            else:
+                v = state.get(task_id, [{}])[0]
+                if v:
+                    parameters['execution_date'] = v.get('execution_date')
+                else:
+                    parameters['execution_date'] = None
             parameters['configuration'] = self.configuration
             parameters['workflow'] = workflow
             parameters['user'] = workflow['user']

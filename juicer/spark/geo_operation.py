@@ -20,7 +20,8 @@ class ReadShapefile(DataReaderOperation):
     DATA_SOURCE_ID_PARAM = 'shapefile'
 
     def __init__(self, parameters, named_inputs, named_outputs):
-        Operation.__init__(self, parameters, named_inputs, named_outputs)
+        DataReaderOperation.__init__(self, parameters, named_inputs,
+                                     named_outputs)
         if self.DATA_SOURCE_ID_PARAM in parameters:
             self._set_data_source_parameters(parameters)
         else:
@@ -113,7 +114,7 @@ class GeoWithin(Operation):
 
             schema = [s.name for s in {0}.schema]
             shp_object = {0}.collect()
-            broad_shapefile_{0} = spark_session.sparkContext.broadcast(
+            bcast_shapefile = spark_session.sparkContext.broadcast(
                 shp_object)
 
             x_min = float('+inf')
@@ -153,22 +154,22 @@ class GeoWithin(Operation):
                 matches = bcast_index.intersect([y, x, y, x])
 
                 for shp_inx in matches:
-                    row = broad_shapefile_{0}.value[shp_inx]
+                    row = bcast_shapefile.value[shp_inx]
                     polygon = Path(row['points'])
                     # Here it uses longitude, latitude
                     if polygon.contains_point([y, x]):
                         return [col for col in row]
-                return [None] * len(broad_shapefile_{0}.value[0])
+                return [None] * len(bcast_shapefile.value[0])
 
-            shapefile_features_count_{0}= len(broad_shapefile_{0}.value[0])
+            shapefile_features_count= len(bcast_shapefile.value[0])
             udf_get_first_polygon = functions.udf(
                 get_first_polygon, types.ArrayType(types.StringType()))
-            within_{0} = {2}.withColumn(
+            within = {2}.withColumn(
                 "polygon_position", udf_get_first_polygon(functions.col('{3}'),
                                                         functions.col('{4}')))
-            {5} = within_{0}.select(within_{0}.columns +
-                [within_{0}.polygon_position[i].alias(schema[i])
-                    for i in xrange(shapefile_features_count_{0})])
+            {5} = within.select(within.columns +
+                [within.polygon_position[i].alias(schema[i])
+                    for i in xrange(shapefile_features_count)])
         """.format(self.named_inputs['geo data'], self.polygon_column[0],
                    self.named_inputs['input data'], self.lat_column[0],
                    self.lon_column[0], self.named_outputs['output data'])

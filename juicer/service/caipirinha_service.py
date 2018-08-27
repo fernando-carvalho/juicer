@@ -24,10 +24,10 @@ def _update_caipirinha(base_url, item_path, token, item_id, data):
     else:
         raise RuntimeError(_(
             u"Error in URL {}: HTTP {} - {}").format(
-                item_id, url, r.status_code, r.text))
+            item_id, url, r.status_code, r.text))
 
 
-def _emit_saving_visualization(emit_event_fn, task_id):
+def _emit_saving_visualization(emit_event_fn, task_id):  # pragma: no cover
     if emit_event_fn is not None:
         emit_event_fn(
             'update task', status='RUNNING',
@@ -37,7 +37,8 @@ def _emit_saving_visualization(emit_event_fn, task_id):
             type='STATUS')
 
 
-def _emit_saved_visualization(_type, emit_event_fn, visualization):
+def _emit_saved_visualization(_type, emit_event_fn,
+                              visualization):  # pragma: no cover
     if emit_event_fn is not None:
         emit_event_fn(
             'task result', status='COMPLETED',
@@ -50,7 +51,7 @@ def _emit_saved_visualization(_type, emit_event_fn, visualization):
             operation_id=visualization['model'].type_id)
 
 
-def _emit_completed(emit_event_fn, task_id):
+def _emit_completed(emit_event_fn, task_id):  # pragma: no cover
     if emit_event_fn is not None:
         emit_event_fn(
             'update task', status='COMPLETED',
@@ -71,15 +72,9 @@ def new_dashboard(config, title, user, workflow_id, workflow_name, job_id,
     _emit_saving_visualization(emit_event_fn, task_id)
 
     for visualization in visualizations:
-        # HBase value composed by several columns, the last one refers
-        # to the visualization data
-        # _get_hbsase_visualization_format(user, visualization,
-        #                                  workflow_id)
-        # vis_value = _get_hbsase_visualization_format(
-        #     user, visualization, workflow_id)
         _emit_saved_visualization(_type, emit_event_fn, visualization)
-
         del visualization['model']
+
     r = _update_caipirinha(caipirinha_config['url'], 'dashboards',
                            caipirinha_config['auth_token'], '',
                            json.dumps(data))
@@ -93,8 +88,6 @@ def new_visualization(config, user, workflow_id, job_id,
     caipirinha_config = config['juicer']['services']['caipirinha']
 
     _emit_saving_visualization(emit_event_fn, task_id)
-    # vis_value = _get_hbsase_visualization_format(
-    #     user, visualization, workflow_id)
     _emit_saved_visualization(_type, emit_event_fn, visualization)
 
     del visualization['model']

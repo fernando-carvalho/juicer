@@ -8,6 +8,8 @@ import signal
 import sys
 import time
 import traceback
+import imp
+import importlib
 
 # noinspection PyUnresolvedReferences
 import datetime
@@ -20,25 +22,23 @@ from timeit import default_timer as timer
 from concurrent.futures import ThreadPoolExecutor
 # noinspection PyCompatibility
 from juicer.runner import configuration
-from juicer.runner import protocol as juicer_protocol
+from juicer.runner import juicer_protocol
 
 from juicer.runner.minion_base import Minion
-from juicer.compss.transpiler import COMPSsTranspiler
+from juicer.sklearn.transpiler import SklearnTranspiler
 from juicer.util import dataframe_util
 from juicer.workflow.workflow import Workflow
 
-from juicer.compss.COMPSsEnvGenerator import *
-
 
 logging.config.fileConfig('logging_config.ini')
-log = logging.getLogger('juicer.compss.compss_minion')
+log = logging.getLogger('juicer.sklearn.sklearn_minion')
 
 locales_path = os.path.join(os.path.dirname(__file__), '..', 'i18n', 'locales')
 
 
-class COMPSsMinion(Minion):
+class SklearnMinion(Minion):
     """
-    Controls the execution of COMPSs code in Lemonade Juicer.
+    Controls the execution of Sklearn code in Lemonade Juicer.
     """
 
     # max idle time allowed in seconds until this minion self termination
@@ -58,7 +58,7 @@ class COMPSsMinion(Minion):
         self._state = {}
         self.config = config
 
-        self.transpiler = COMPSsTranspiler(config)
+        self.transpiler = SklearnTranspiler(config)
         configuration.set_config(self.config)
 
         self.tmp_dir = self.config.get('config', {}).get('tmp_dir', '/tmp')
@@ -73,8 +73,8 @@ class COMPSsMinion(Minion):
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.job_future = None
 
-        self.compss_config = config['juicer'].get('compss', {})
-        self.lib_path = self.compss_config['functions_lib']
+        self.sklearn_config = config['juicer'].get('sklearn', {})
+
         # self termination timeout
         self.active_messages = 0
         self.self_terminate = True
@@ -154,14 +154,6 @@ class COMPSsMinion(Minion):
                                     fallback=True)
             t.install(unicode=True)
 
-            # TODO: We should consider the case in which the spark session is
-            # already instantiated and this new request asks for a different set
-            # of configurations:
-            # - Should we rebuild the context from scratch and execute all jobs
-            # so far?
-            # - Should we ignore this part of the request and execute over the
-            # existing
-            # (old configs) spark session?
             app_configs = msg_info.get('app_configs', {})
 
             if self.job_future:
@@ -204,8 +196,8 @@ class COMPSsMinion(Minion):
         try:
             loader = Workflow(workflow, self.config)
 
-            # force the compss context creation
-            self.get_or_create_compss_session(loader, app_configs)
+            # force the sklearn context creation
+            self.get_or_create_sklearn_session(loader, app_configs, job_id)
 
             # Mark job as running
             self._emit_event(room=job_id, namespace='/stand')(
@@ -220,9 +212,6 @@ class COMPSsMinion(Minion):
             generated_code_path = os.path.join(
                 self.tmp_dir, '{}.py'.format(module_name))
 
-            app_tar_path = os.path.join(
-                self.tmp_dir, '{}.tar.gz'.format(module_name))
-
             with codecs.open(generated_code_path, 'w', 'utf8') as out:
                 self.transpiler.transpile(
                     loader.workflow, loader.graph, {}, out, job_id)
@@ -231,69 +220,26 @@ class COMPSsMinion(Minion):
             if os.path.isfile('{}c'.format(generated_code_path)):
                 os.remove('{}c'.format(generated_code_path))
 
-            # Setting the project and resource xml files
-            docker_image = self.compss_config.get('docker_image',
-                                                  'lucasmsp/compssbase:2.0')
-            configs_envCOMPSs = {}
-            configs_envCOMPSs['MinimumVMs'] = \
-                self.compss_config.get('MinimumVMs', 1)
-            configs_envCOMPSs['MaximumVMs'] = \
-                self.compss_config.get('MaximumVMs', 8)
-            configs_envCOMPSs['image'] = docker_image
-            configs_envCOMPSs['Application'] = app_tar_path
-            configs_envCOMPSs['instances'] =  \
-                self.compss_config.get('instances', ['small', 'medium'])
-
-            generated_project = os.path.join(
-                self.tmp_dir, '{}_project.xml'.format(module_name))
-            with codecs.open(generated_project, 'w', 'utf8') as out:
-                generateProject(configs_envCOMPSs, out)
-
-            generated_resources = os.path.join(
-                self.tmp_dir, '{}_resources.xml'.format(module_name))
-            with codecs.open(generated_resources, 'w', 'utf8') as out:
-                generateResources(configs_envCOMPSs, out)
-
-            # Compress the files and the lib in a tar
-            make_tarfile(app_tar_path,
-                         generated_code_path,
-                         generated_project,
-                         generated_resources,
-                         self.lib_path)
-
-            # Launch the COMPSs docker container
-            import subprocess
-            proc = subprocess.Popen(['docker', 'run', '-id', docker_image],
-                                    stdout=subprocess.PIPE)
-            containerID = proc.stdout.read()[0:15]
-
-            command = 'sh -c "/opt/COMPSs/Runtime/scripts/user/runcompss -v"'
-            output_log = os.path.join(
-                self.tmp_dir, '{}_output.log'.format(module_name))
-            with open(output_log, "w") as output:
-                proc = subprocess.Popen(['docker', 'exec', '-it',
-                                         containerID, 'sh', '-c',
-                                         command], stdout=output)
-
-
-            # usar o runcompss
-
-            # # Here code is loaded in Python executor
-            # # self.module = importlib.import_module(module_name)
-            # # self.module = imp.reload(self.module)
-            # if log.isEnabledFor(logging.debug):
-            #     log.debug('Objects in memory after loading module: %s',
-            #               len(gc.get_objects()))
+            # Launch the sklearn
+            self.module = importlib.import_module(module_name)
+            self.module = imp.reload(self.module)
+            if log.isEnabledFor(logging.debug):
+                log.debug('Objects in memory after loading module: %s',
+                          len(gc.get_objects()))
 
             # Starting execution. At this point, the transpiler have created a
             # module with a main function that receives a spark_session and the
             # current state (if any). We pass the current state to the execution
             # to avoid re-computing the same tasks over and over again, in case
             # of several partial workflow executions.
-            # new_state = self.module.main(
-            #     self.get_or_create_spark_session(loader, app_configs),
-            #     self._state,
-            #     self._emit_event(room=job_id, namespace='/stand'))
+            try:
+                new_state = self.module.main(
+                        self.get_or_create_sklearn_session(loader, app_configs,
+                                                           job_id),
+                        self._state,
+                        self._emit_event(room=job_id, namespace='/stand'))
+            except:
+                raise
 
             end = timer()
             # Mark job as completed
@@ -305,7 +251,6 @@ class COMPSsMinion(Minion):
             # We update the state incrementally, i.e., new task results can be
             # overwritten but never lost.
             # self._state.update(new_state)
-
 
         except UnicodeEncodeError as ude:
             message = self.MNN006[1].format(ude)
@@ -358,7 +303,7 @@ class COMPSsMinion(Minion):
         return result
 
     # noinspection PyUnresolvedReferences
-    def get_or_create_compss_session(self, loader, app_configs):
+    def get_or_create_sklearn_session(self, loader, app_configs, job_id):
         """
         """
         pass
@@ -412,13 +357,6 @@ class COMPSsMinion(Minion):
     def cancel_job(self, job_id):
         if self.job_future:
             while True:
-                # if self.is_spark_session_available():
-                #     self.spark_session.sparkContext.cancelAllJobs()
-                # try:
-                #     self.job_future.result(timeout=1)
-                #     break
-                # except TimeoutError as te:
-                #     pass
                 pass
 
         message = self.MNN007[1].format(self.app_id)
@@ -442,7 +380,7 @@ class COMPSsMinion(Minion):
         msg_processed = {
             'workflow_id': self.workflow_id,
             'app_id': self.app_id,
-            'type': COMPSsMinion.MSG_PROCESSED,
+            'type': SklearnMinion.MSG_PROCESSED,
             'msg_type': msg_type
         }
         self.state_control.push_app_queue(self.app_id,

@@ -1,0 +1,202 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+"""
+Auto-generated Scikit-Learn code from Lemonade Workflow
+(c) Speed Labs - Departamento de Ciência da Computação
+    Universidade Federal de Minas Gerais
+More information about Lemonade to be provided
+"""
+from concurrent.futures import ThreadPoolExecutor
+import os
+import re
+import json
+import simplejson
+import string
+import sys
+import time
+import unicodedata
+import numpy as np
+import pandas as pd
+from timeit import default_timer as timer
+from juicer.util import dataframe_util
+import traceback
+
+{% autopep8 %}
+
+
+def sklearn_logging(msg):
+    print msg
+
+executor = ThreadPoolExecutor(max_workers={{instances|length}})
+task_futures = {}
+
+{%- for instance in instances %}
+{%-  handleinstance instance %}
+{%- if instance.has_code and instance.enabled %}
+{%- set task = instance.parameters.task %}
+{%- set task_id = task.id %}
+
+
+# noinspection PyUnusedLocal
+def {{task.operation.slug.replace('-', '_')}}_{{instance.order}}(sklearn_session, cached_state, emit_event):
+    """
+    {%- if task.forms.comment and task.forms.comment.value %}
+    {{task.forms.comment.value.strip().replace('"', '')}}
+    {%- else %}
+    Operation {{task_id }}
+    {%- endif %}
+    Task hash: {{instance.parameters.hash}}.
+    """
+    task_id = '{{task_id}}'
+    {%- if task.parents %}
+    {% set msg = dict_msgs['lemonade_task_afterbefore'].format(instance.parameters.task.parents, instance.parameters.task.id) %}
+    sklearn_logging("{{msg}}")
+
+    # If the task's result is not cached, we submit its dependencies first
+    {%- set parents = transpiler._get_parent_tasks(instances_by_task_id, instance) %}
+    {%- for parent_id, method in parents %}
+    parent_id = '{{parent_id}}'
+    if parent_id not in task_futures:
+        task_futures[parent_id] = executor.submit(
+                lambda: {{method}}(sklearn_session, cached_state, emit_event))
+    {%- endfor %}
+    {%- endif %}
+
+    {%- if parents %}
+    # Next we wait for the dependencies to complete
+    {%- for parent_id, method in parents %}
+    {%- set parent_instance = instances_by_task_id[parent_id] %}
+    {%- if parent_instance.get_output_names(", ") %}
+    parent_result = task_futures['{{parent_id}}'].result()
+    {%- for port_name,out in zip(parent_instance.parameters.task.port_names, parent_instance.get_output_names(',').split(','))%}
+    {{out}} = parent_result['{{port_name}}']
+    {%- endfor %}
+    ts_{{parent_instance.output}} = parent_result['time']
+    {% endif %}
+    {%- endfor %}
+    {% set msg = dict_msgs['lemonade_task_parents'] % instance.parameters.task.id %}
+    sklearn_logging("{{msg}}")
+    {%- endif %}
+
+    {%- if not plain %}
+    emit_task_running(task_id, sklearn_session, emit_event)
+    {%- endif %}
+
+    start = timer()
+    # --- Begin operation code ---- #
+    {{instance.generate_code().strip() | indent(width=4, indentfirst=False)}}
+    # --- End operation code ---- #
+    {%- if not plain %}
+    {%- for gen_result in instance.get_generated_results() %}
+    emit_event(name='task result', message=_('{{gen_result.type}}'),
+               status='COMPLETED',
+               identifier='{{task.operation.id}}/{{task_id}}')
+    {%- endfor %}
+    {%- endif %}
+
+    results = {
+        'task_name': '{{task.name}}',
+      {%- set is_leaf = instance.out_degree == 0 %}
+      {%- for port_name,out in zip(task.port_names, instance.get_output_names(',').split(',')) %}
+        {%- if port_name and out %}
+         '{{port_name}}': {{out}},
+        {%- endif %}
+      {%- endfor %}
+    }
+
+    {%- if instance.contains_results() %}
+    outputs = [(name, out) for name, out in results.items() if isinstance(out, pd.DataFrame)]
+    {%- if instance.has_code and instance.enabled and instance.contains_sample %}
+    for name, out in outputs:
+        dataframe_util.emit_sample_sklearn(task_id, out, emit_event, name)
+    {%- endif %}
+    {%- if instance.has_code and instance.enabled and instance.contains_schema %}
+    for name, out in outputs:
+        dataframe_util.emit_schema_sklearn(task_id, out, emit_event, name)
+    {%- endif %}
+    {%- endif %}
+
+
+    {%- if not plain %}
+    emit_task_completed(task_id, sklearn_session, emit_event)
+    {%- endif %}
+
+    results['time'] = timer() - start
+    return results
+
+
+{%- endif %}
+{%- endhandleinstance %}
+{% endfor %}
+
+def emit_task_running(task_id, sklearn_session, emit_event):
+    emit_event(name='update task', message=_('Task running'), status='RUNNING',
+               identifier=task_id)
+
+def emit_task_completed(task_id, sklearn_session, emit_event):
+    emit_event(name='update task', message=_('Task completed'),
+               status='COMPLETED', identifier=task_id)
+
+def get_results(_task_futures, task_id):
+    return _task_futures[task_id].result() if task_id in _task_futures else None
+
+def main(sklearn_session, cached_state, emit_event):
+    """ Run generated code """
+
+    try:
+        {%- for instance in instances %}
+        {%- if instance.has_code and instance.enabled and instance.multiple_inputs %}
+        {{instance.get_inputs_names.replace(',', '=') }} = None
+        {%- endif %}
+        {%- endfor %}
+
+        {%- set ids_and_methods = transpiler.get_ids_and_methods(instances) %}
+        {%- for task_id, method in ids_and_methods.items() %}
+        task_futures['{{task_id}}'] = executor.submit(
+            lambda: {{method}}(sklearn_session, cached_state, emit_event))
+        {%- endfor %}
+
+        {%- for task_id in ids_and_methods.keys() %}
+        {%- set s = dependency_controller.satisfied(task_id) %}
+        task_futures['{{task_id}}'].result()
+        {%- endfor %}
+        {%- for disabled in transpiler.get_disabled_tasks(instances) %}
+        emit_event(name='update task', message=_(
+            'Task completed, but not executed (not used in the workflow).'),
+            status='COMPLETED',
+            identifier='{{disabled.parameters.task.id}}')
+        {%- endfor %}
+
+        {%- for disabled in disabled_tasks %}
+        emit_event(name='update task', message=_(
+            'Task completed, but not executed (not used in the workflow).'),
+            status='COMPLETED', identifier='{{disabled}}')
+        {%- endfor %}
+
+        return {
+            'status': 'OK',
+            'message': 'Execution defined',
+            {%- for instance in transpiler._get_enabled_tasks(instances) %}
+            '{{instance.parameters.task.id}}':
+                [get_results(task_futures,
+                '{{instance.parameters.task.id}}'),
+                '{{instance.parameters.hash}}'],
+            {%- endfor %}
+        }
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+
+{%- if execute_main %}
+
+def dummy_emit_event(room, namespace):
+    def _dummy_emit_event(name, message, status, identifier, **kwargs):
+        return None
+    return _dummy_emit_event
+
+sklearn_session = "Scikit-Learn"
+#TO DO: LOGLEVEL
+main(sklearn_session, {}, dummy_emit_event(room=-1, namespace='/none'))
+
+{%- endif %}
+
+{% endautopep8 %}

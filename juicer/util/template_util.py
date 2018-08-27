@@ -11,6 +11,7 @@ from six import reraise as raise_
 
 log = logging.getLogger(__name__)
 
+
 class HandleExceptionExtension(Extension):
     # a set of names that trigger the extension.
     tags = {'handleinstance'}

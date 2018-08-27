@@ -49,7 +49,7 @@ def get_records():
 
 def get_side_effect(records, task_id, index=0):
     # noinspection PyUnusedLocal
-    def side_effect0(w, g, c, out, j):
+    def side_effect0(w, g, c, out, j, state):
         print(dedent("""
             from dummy_spark import SparkConf, SparkContext
             import datetime

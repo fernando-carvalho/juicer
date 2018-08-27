@@ -19,7 +19,7 @@ import redis
 import yaml
 from juicer.exceptions import JuicerException
 from juicer.runner import configuration
-from juicer.runner import juicer_protocol
+from juicer.runner import protocol as juicer_protocol
 from juicer.runner.control import StateControlRedis
 from redis.exceptions import ConnectionError
 
@@ -27,7 +27,7 @@ locales_path = os.path.join(os.path.dirname(__file__), '..', 'i18n', 'locales')
 
 os.chdir(os.environ.get('JUICER_HOME', '.'))
 logging.config.fileConfig('logging_config.ini')
-log = logging.getLogger('juicer.runner.juicer_server')
+log = logging.getLogger('juicer.runner.server')
 
 
 class JuicerServer:
@@ -111,10 +111,10 @@ class JuicerServer:
             app_id = str(msg_info['app_id'])
 
             if msg_type in (juicer_protocol.EXECUTE, juicer_protocol.DELIVER):
+                self.platform = msg_info['workflow'].get('platform', {}).get(
+                        'slug', 'spark')
                 self._forward_to_minion(msg_type, workflow_id, app_id, msg,
                                         self.platform)
-                self.platform = msg_info['workflow'].get('platform', {}).get(
-                    'slug', 'spark')
 
             elif msg_type == juicer_protocol.TERMINATE:
                 self._forward_to_minion(msg_type, workflow_id, app_id, msg,
@@ -191,7 +191,6 @@ class JuicerServer:
         # created as part of an active minion.
         # spark.driver.port and spark.driver.blockManager.port are required
         # when running the driver inside a docker container.
-
         open_opts = ['nohup', sys.executable, self.minion_executable,
                      '-w', str(workflow_id), '-a', str(app_id), '-t', platform,
                      '-c',

@@ -7,7 +7,7 @@ import sys
 import mock
 import os
 from juicer.runner.control import StateControlRedis
-from juicer.runner.juicer_server import JuicerServer
+from juicer.runner.server import JuicerServer
 from mockredis.client import mock_strict_redis_client
 
 

@@ -9,10 +9,13 @@ More information about Lemonade to be provided
 """
 from concurrent.futures import ThreadPoolExecutor
 import collections
+import functools
+import datetime
 import itertools
 import json
 import os
 import re
+import simplejson
 import string
 import sys
 import time
@@ -25,7 +28,6 @@ from textwrap import dedent
 from timeit import default_timer as timer
 
 from pyspark.ml import classification, evaluation, feature, tuning, clustering
-from pyspark.ml.linalg import Vectors
 from pyspark.sql import functions, types, Row, DataFrame
 from pyspark.sql.utils import IllegalArgumentException
 from pyspark.sql.window import Window
@@ -110,7 +112,7 @@ def {{task.operation.slug.replace('-', '_')}}_{{instance.order}}(spark_session, 
     get_cached_state(
         task_id, cached_state, emit_event, spark_session,
         '{{instance.parameters.hash}}')
-    {%- else %} None
+    {% else %} None
     {%- endif %}
     if results is None:
         # --- Begin operation code ---- #
@@ -147,6 +149,7 @@ def {{task.operation.slug.replace('-', '_')}}_{{instance.order}}(spark_session, 
         {%- endif %}
 
         results = {
+            'execution_date': datetime.datetime.utcnow(),
             'task_name': '{{task.name}}',
           {%- set is_leaf = instance.out_degree == 0 %}
           {%- for port_name,out in zip(task.port_names, instance.get_output_names(',').split(',')) %}

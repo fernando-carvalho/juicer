@@ -2,13 +2,14 @@
 from io import StringIO
 
 import mock
+import pytest
 from juicer.operation import Operation
-from juicer.spark.transpiler import SparkTranspiler
-
+from juicer.spark.transpiler import SparkTranspiler, TranspilerUtils
 from juicer.workflow.workflow import Workflow
 
 
-def test_transpiler_basic_flow_success():
+@pytest.fixture
+def basic_wf_fixture():
     workflow = {
         "id": 11,
         "name": "Sort titanic data by passenger age",
@@ -119,6 +120,49 @@ def test_transpiler_basic_flow_success():
             "name": "admin"
         }
     }
+    return workflow
+
+
+@pytest.fixture
+def workflow_with_disabled_tasks_fixture():
+    workflow = basic_wf_fixture()
+
+    for i, t in enumerate(workflow['tasks']):
+        t['enabled'] = (i % 2) == 0
+    return workflow
+
+
+# noinspection PyShadowingNames,PyProtectedMember
+def test_transpiler_utils__get_enabled_tasks_to_execute_success(
+        workflow_with_disabled_tasks_fixture):
+    workflow = workflow_with_disabled_tasks_fixture
+    transpiler = SparkTranspiler({})
+
+    # Mock in order to do not read config file
+    with mock.patch(
+            'juicer.workflow.workflow.Workflow._build_initial_workflow_graph'):
+        loader = Workflow(workflow, config={})
+        instances = []
+        total_enabled = 0
+        for i, task in enumerate(loader.workflow['tasks']):
+            parameters = dict(
+                [(k, v['value']) for k, v in task['forms'].items()])
+            parameters['task'] = task
+            class_name = transpiler.operations[task['operation']['slug']]
+            instance = class_name(parameters, {}, {})
+            # Force enabled, because flows are not set
+            if (i % 2) == 0:
+                instance.has_code = True
+                total_enabled += 1
+            instances.append(instance)
+        assert len(
+            TranspilerUtils._get_enabled_tasks_to_execute(
+                instances)) == total_enabled
+
+
+# noinspection PyUnusedLocal, PyShadowingNames
+def test_transpiler_basic_flow_success(basic_wf_fixture):
+    workflow = basic_wf_fixture
     with mock.patch(
             'juicer.workflow.workflow.Workflow._build_initial_workflow_graph') \
             as mocked_fn:

@@ -25,9 +25,19 @@ class Workflow(object):
 
     log = logging.getLogger(__name__)
 
-    def __init__(self, workflow_data, config):
-
+    def __init__(self, workflow_data, config, query_operations=None,
+                 query_data_sources=None):
+        """
+        Constructor.
+        :param workflow_data: Workflow dictionary
+        :param config: Execution configuration
+        :param query_operations: how query operations, useful for testing
+        :param query_data_sources: how query data sources, useful for testing
+        """
         self.config = config
+        self.query_operations = query_operations
+        self.query_data_sources = query_data_sources
+
         # Initialize
         self.graph = nx.MultiDiGraph()
 
@@ -44,7 +54,6 @@ class Workflow(object):
         # Topological sorted tasks according to their dependencies
         self.sorted_tasks = []
 
-
         # Spark or COMPSs
         self.platform = workflow_data.get('platform', {}).get('slug', 'spark')
 
@@ -52,8 +61,8 @@ class Workflow(object):
             self._build_privacy_restrictions()
 
         # Verify null edges to topological_sorted_tasks
-        if self.is_there_null_target_id_tasks() \
-                and self.is_there_null_source_id_tasks():
+        if self._is_there_null_target_id_tasks() \
+                and self._is_there_null_source_id_tasks():
             self.sorted_tasks = self.get_topological_sorted_tasks()
         else:
             raise AttributeError(
@@ -63,16 +72,21 @@ class Workflow(object):
                     self.__class__))
 
     def _build_privacy_restrictions(self):
-        if 'juicer' not in self.config or 'services' not in self.config[
-            'juicer']:
+        if 'juicer' not in self.config or \
+                        'services' not in self.config['juicer']:
             return
         limonero_config = self.config['juicer']['services']['limonero']
         data_sources = []
         for t in self.workflow['tasks']:
             if t['operation'].get('slug') == 'data-reader':
-                data_sources.append(limonero_service.get_data_source_info(
-                    limonero_config['url'], str(limonero_config['auth_token']),
-                    t['forms']['data_source']['value']))
+                if self.query_data_sources:
+                    ds = next(self.query_data_sources())
+                else:
+                    ds = limonero_service.get_data_source_info(
+                        limonero_config['url'],
+                        str(limonero_config['auth_token']),
+                        t['forms']['data_source']['value'])
+                data_sources.append(ds)
 
         privacy_info = {}
         attribute_group_set = collections.defaultdict(list)
@@ -123,7 +137,7 @@ class Workflow(object):
     def _build_initial_workflow_graph(self):
         """ Builds a graph with the tasks """
 
-        operations_tahiti = {op['id']: op for op in self.get_operations()}
+        operations_tahiti = {op['id']: op for op in self._get_operations()}
         # Querying all operations from tahiti one time
         task_map = {}
 
@@ -154,7 +168,7 @@ class Workflow(object):
 
                     # Correct form field types if the interface (Citron) does
                     # not send this information
-                    for k, v in task['forms'].items():
+                    for k, v in task.get('forms', {}).items():
                         v['category'] = form_fields.get(k, 'EXECUTION')
 
                     for port in ports_list:
@@ -228,6 +242,8 @@ class Workflow(object):
                     self.log.warn(
                         _("Incorrect configuration for ports: %s, %s"),
                         source_port, target_port)
+                    import pdb
+                    pdb.set_trace()
                     raise ValueError(_(
                         "Invalid or non-existing port: '{op}' {s} {t}").format(
                         op=task_map[flow['source_id']]['operation']['name'],
@@ -242,39 +258,11 @@ class Workflow(object):
 
         return self.graph
 
-    def check_in_degree_edges(self):
-        for nodes in self.graph.nodes():
-            if self.graph.node[nodes]['in_degree'] == \
-                    self.graph.node[nodes]['in_degree_required']:
-                pass
-            else:
-                raise AttributeError(
-                    _("Port '{} in node {}' missing, "
-                      "must be informed for operation {}").format(
-                        self.WORKFLOW_GRAPH_TARGET_ID_PARAM,
-                        nodes,
-                        self.__class__))
-        return 1
-
-    def check_out_degree_edges(self):
-
-        for nodes in self.graph.nodes():
-            if self.graph.node[nodes]['out_degree'] == \
-                    self.graph.node[nodes]['out_degree_required']:
-                pass
-            else:
-                raise AttributeError(
-                    _("Port '{}' missing, must be informed "
-                      "for operation {}").format(
-                        self.WORKFLOW_GRAPH_SOURCE_ID_PARAM,
-                        self.__class__))
-        return 1
-
     def builds_sorted_workflow_graph(self, tasks, flows):
 
         # Querying all operations from tahiti one time
         operations_tahiti = dict(
-            [(op['id'], op) for op in self.get_operations()])
+            [(op['id'], op) for op in self._get_operations()])
         for task in tasks:
             operation = operations_tahiti.get(task.get('operation')['id'])
             if operation is not None:
@@ -364,19 +352,19 @@ class Workflow(object):
 
         return sorted_tasks_id
 
-    def is_there_null_source_id_tasks(self):
+    def _is_there_null_source_id_tasks(self):
         for flow in self.workflow['flows']:
             if flow['source_id'] == "":
                 return False
         return True
 
-    def is_there_null_target_id_tasks(self):
+    def _is_there_null_target_id_tasks(self):
         for flow in self.workflow['flows']:
             if flow['target_id'] == "":
                 return False
         return True
 
-    def get_operations(self):
+    def _get_operations(self):
         """ Returns operations available in Tahiti """
         tahiti_conf = self.config['juicer']['services']['tahiti']
         params = {
@@ -385,76 +373,11 @@ class Workflow(object):
             'token': str(tahiti_conf['auth_token']),
             'item_id': ''
         }
-
-        # Querying tahiti operations to get number of inputs and outputs
-        return tahiti_service.query_tahiti(params['base_url'],
-                                           params['item_path'],
-                                           params['token'],
-                                           params['item_id'])
-
-    def get_ports_from_operation_tasks(self, id_operation):
-        tahiti_conf = self.config['juicer']['services']['tahiti']
-        params = {
-            'base_url': tahiti_conf['url'],
-            'item_path': 'operations',
-            'token': str(tahiti_conf['auth_token']),
-            'item_id': id_operation
-        }
-
-        # Querying tahiti operations to get number of inputs and outputs
-        operations_ports = tahiti_service.query_tahiti(params['base_url'],
-                                                       params['item_path'],
-                                                       params['token'],
-                                                       params['item_id'])
-        # Get operation requirements in tahiti
-        result = {
-            'N_INPUT': 0,
-            'N_OUTPUT': 0,
-            'M_INPUT': 'None',
-            'M_OUTPUT': 'None'
-        }
-
-        for port in operations_ports['ports']:
-            if port['type'] == 'INPUT':
-                result['M_INPUT'] = port['multiplicity']
-                if 'N_INPUT' in result:
-                    result['N_INPUT'] += 1
-                else:
-                    result['N_INPUT'] = 1
-            elif port['type'] == 'OUTPUT':
-                result['M_OUTPUT'] = port['multiplicity']
-                if 'N_OUTPUT' in result:
-                    result['N_OUTPUT'] += 1
-                else:
-                    result['N_OUTPUT'] = 1
-        return result
-
-    def workflow_execution_parcial(self):
-
-        topological_sort = self.get_topological_sorted_tasks()
-
-        for node_obj in topological_sort:
-            # print self.workflow_graph.node[node]
-            print (nx.ancestors(self.graph, node_obj),
-                   self.graph.predecessors(node_obj),
-                   node_obj,
-                   self.graph.node[node_obj]['in_degree_required'],
-                   self.graph.node[node_obj]['in_degree'],
-                   self.graph.node[node_obj]['out_degree_required'],
-                   self.graph.node[node_obj]['out_degree']
-                   )
-        return True
-
-    # only to debug
-    def check_outdegree_edges(self, atr):
-
-        if self.graph.has_node(atr):
-            return (self.graph.node[atr]['in_degree'],
-                    self.graph.node[atr]['out_degree'],
-                    self.graph.in_degree(atr),
-                    self.graph.out_degree(atr),
-                    self.graph.node[atr]['in_degree_required'],
-                    self.graph.node[atr]['out_degree_required']
-                    )
+        if self.query_operations:
+            return self.query_operations()
         else:
-            raise KeyError(_("The node informed doesn't exist"))
+            # Querying tahiti operations to get number of inputs and outputs
+            return tahiti_service.query_tahiti(params['base_url'],
+                                               params['item_path'],
+                                               params['token'],
+                                               params['item_id'])
