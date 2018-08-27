@@ -69,6 +69,14 @@ def test_feature_indexer_operation_success():
         {in1}_without_null = {in1}.na.fill('NA', subset=col_alias.keys())
         {out} = pipeline.fit({in1}_without_null).transform({in1}_without_null)
 
+        for k, v in col_alias.items():
+            field_metadata = output_1.schema[str(v)].metadata
+            if not 'lemon_attr' in field_metadata:
+                field_metadata['lemon_attr'] = {{}}
+            field_metadata['lemon_attr']['indexed_from'] = k
+            {out} = {out}.withColumn(
+                    v, functions.col(v).alias('', metadata=field_metadata))
+
         if 'indexer' not in cached_state:
             cached_state['indexers'] = {{}}
         for name, model in models_task_1.items():
@@ -199,6 +207,13 @@ def test_feature_indexer_vector_operation_success():
             {1}_without_null = {1}.na.fill('NA', subset=col_alias.keys())
 
             {2} = pipeline.fit({1}_without_null).transform({1}_without_null)
+            for k, v in col_alias.items():
+                field_metadata = output_1.schema[str(v)].metadata
+                if not 'lemon_attr' in field_metadata:
+                    field_metadata['lemon_attr'] = {{}}
+                field_metadata['lemon_attr']['indexed_from'] = k
+                {2} = {2}.withColumn(
+                        v, functions.col(v).alias('', metadata=field_metadata))
             if 'indexer' not in cached_state:
                 cached_state['indexers'] = {{}}
             for name, model in models_task_1.items():

@@ -1674,7 +1674,7 @@ class ClusteringModelOperation(Operation):
                               'They will be implicitly assembled and rows with '
                               'null values will be discarded. If this is '
                               'undesirable, explicitly add a feature assembler '
-                              'in the workflow.'),)
+                              'in the workflow.'), )
 
             return dedent(code)
 
