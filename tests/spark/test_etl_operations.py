@@ -12,19 +12,7 @@ from juicer.spark.etl_operation import SplitOperation, SortOperation, \
     FilterOperation, \
     CleanMissingOperation, \
     AddColumnsOperation
-from tests import compare_ast, format_code_comparison
-
-
-def debug_ast(code, expected_code):
-    print("""
-    Code
-    {sep}
-    {code}
-    {sep}
-    Expected
-    {sep}
-    {expected}
-    """.format(code=code, sep='-' * 20, expected=expected_code))
+from tests import compare_ast, format_code_comparison, debug_ast
 
 
 def test_add_columns_minimum_params_success():

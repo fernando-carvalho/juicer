@@ -8,6 +8,7 @@ from textwrap import dedent
 
 import datetime
 
+from jinja2 import Environment, BaseLoader
 from juicer.operation import Operation
 from juicer.service import limonero_service
 from juicer.util import chunks
@@ -182,32 +183,87 @@ class VisualizationMethodOperation(Operation):
 
     def get_model_parameters(self):
         result = {}
-        valid = ['x_axis_attribute', "y_title", "y_prefix", 'legend',
-                 "y_suffix", "y_format", "x_title", "x_prefix", "x_suffix",
-                 "x_format", "x_format", 'type',
-                 'z_axis_attribute', 'z_title', 'z_prefix', 'z_suffix',
-                 'z_format',
-                 't_axis_attribute', 't_title', 't_prefix', 't_suffix',
-                 't_format',
-                 'latitude', 'longitude', 'value', 'label',
-                 'y_axis_attribute', 'z_axis_attribute', 't_axis_attribute',
-                 'series_attribute', 'extra_data', 'polygon', 'geojson_id',
-                 'polygon_url']
+        valid = [
+            'x_title', 'x_prefix', 'x_suffix', 'x_format', 'x_axis_attribute',
+            'y_title', 'y_prefix', 'y_suffix', 'y_format', 'y_axis_attribute',
+            'z_title', 'z_prefix', 'z_suffix', 'z_format', 'z_axis_attribute',
+            't_title', 't_prefix', 't_suffix', 't_format', 't_axis_attribute',
+            'legend', 'label', 'value', 'type',
+            'latitude', 'longitude', 'geojson_id',
+            'series_attribute', 'extra_data', 'polygon', 'polygon_url'
+        ]
         for k, v in self.parameters.items():
             if k in valid:
                 result[k] = v
         return result
-
-    def get_output_names(self, sep=','):
-        return self.output
 
     def get_model_name(self):
         NotImplementedError(_("Method generate_code should be implemented "
                               "in {} subclass").format(self.__class__))
 
     def generate_code(self):
+        code_template = dedent("""
+            from juicer.spark.vis_operation import {{model}}
+            from juicer.util.dataframe_util import SimpleJsonEncoder as enc
+            {%- if standalone %}
+            from juicer.service import caipirinha_service
+            {%- endif %}
+            params = '{{params}}'
+            {{out}} = {{model}}(
+                {{input}}, '{{task}}', '{{op}}',
+                '{{op_slug}}', '{{title}}',
+                {{columns}},
+                '{{orientation}}', {{id_attr}}, {{value_attr}},
+                params=json.loads(params))
+            {%- if standalone %}
+            {{caipirinha_conf}}
+            visualization = {
+                'job_id': '{{job_id}}',
+                'task_id': {{out}}.task_id,
+                'title': {{out}}.title ,
+                'type': {
+                    'id': {{out}}.type_id,
+                    'name': {{out}}.type_name
+                },
+                'model': {{out}},
+                'data': json.dumps({{out}}.get_data(), cls=enc, ignore_nan=True)
+            }
+            caipirinha_service.new_visualization(
+                config, {{user}}, {{workflow_id}}, {{job_id}},
+                '{{task_id}}',
+                visualization, emit_event)
+            {%- endif %}
+        """)
+        template = Environment(loader=BaseLoader).from_string(
+            code_template)
+        standalone = False
+        caipirinha_conf = ""
+        if len(self.named_outputs) == 0:
+            standalone = True
+            caipirinha_conf = get_caipirinha_config(self.config, indentation=1)
+        ctx = dict(
+            out=self.output,
+            model=self.get_model_name(),
+            input=self.named_inputs['input data'],
+            task=self.parameters['task']['id'],
+            op=self.parameters['operation_id'],
+            op_slug=self.parameters['operation_slug'],
+            title=self.title,
+            columns=json.dumps(self.column_names),
+            orientation=self.orientation,
+            id_attr=self.id_attribute,
+            value_attr=self.value_attribute,
+            params=json.dumps(self.get_model_parameters() or {}),
+            standalone=standalone,
+            user=self.parameters['user'],
+            workflow_id=self.parameters['workflow_id'],
+            job_id=self.parameters['job_id'],
+            task_id=self.parameters['task']['id'],
+            caipirinha_conf=caipirinha_conf
+        )
+
         code_lines = [dedent(
-            u"""
+            """
             from juicer.spark.vis_operation import {model}
             from juicer.util.dataframe_util import SimpleJsonEncoder as enc
 
@@ -234,8 +290,8 @@ class VisualizationMethodOperation(Operation):
         if len(self.named_outputs) == 0:
             # Standalone visualization, without a dashboard
             code_lines.append("from juicer.service import caipirinha_service")
-            code_lines.append(get_caipirinha_config(self.config))
-            code_lines.append(dedent("""
+        code_lines.append(get_caipirinha_config(self.config))
+        code_lines.append(dedent("""
             visualization = {{
                 'job_id': '{job_id}',
                 'task_id': {out}.task_id,
@@ -249,19 +305,20 @@ class VisualizationMethodOperation(Operation):
             }}""").format(job_id=self.parameters['job_id'],
                           out=self.output))
 
-            code_lines.append(dedent(u"""
+        code_lines.append(dedent("""
             caipirinha_service.new_visualization(
                 config,
                 {user},
                 {workflow_id}, {job_id}, '{task_id}',
                 visualization, emit_event)
             """.format(
-                user=self.parameters['user'],
-                workflow_id=self.parameters['workflow_id'],
-                job_id=self.parameters['job_id'],
-                task_id=self.parameters['task']['id']
-            )))
-        return '\n'.join(code_lines)
+            user=self.parameters['user'],
+            workflow_id=self.parameters['workflow_id'],
+            job_id=self.parameters['job_id'],
+            task_id=self.parameters['task']['id']
+        )))
+        return dedent(template.render(ctx))
+        # return '\n'.join(code_lines)
 
 
 class BarChartOperation(VisualizationMethodOperation):
@@ -406,6 +463,10 @@ class VisualizationModel(object):
         return ""
 
 
+class VisualizationModelParams(object):
+    X_AXIS_ATTRIBUTE_PARAM = 'x_axis_attribute'
+
+
 class ChartVisualization(VisualizationModel):
     def get_data(self):
         raise NotImplementedError(_('Should be implemented in derived classes'))
@@ -442,16 +503,17 @@ class ChartVisualization(VisualizationModel):
                     "{{name}}"
                 ],
                 "body": [
-                    "<span class='metric'>{{x}}</span><span class='number'>{{y}}</span>"
+                    "<span class='metric'>{{x}}</span>"
+                    "<span class='number'>{{y}}</span>"
                 ]
             },
         }
 
     def _get_axis_info(self):
         schema = self.data.schema
-        if not self.params.get('x_axis_attribute'):
+        if not self.params.get(VisualizationModelParams.X_AXIS_ATTRIBUTE_PARAM):
             raise ValueError(_('X-axis attribute not specified'))
-        x = self.params.get('x_axis_attribute')[0]
+        x = self.params.get(VisualizationModelParams.X_AXIS_ATTRIBUTE_PARAM)[0]
         x_attr = [c for c in schema if c.name == x]
         y_attrs = [c for c in schema if c.name in self.column_names]
         if len(x_attr):
@@ -665,6 +727,9 @@ class DonutChartModel(PieChartModel):
 
 
 class LineChartModel(ChartVisualization):
+    """ A line chart model used by visualizations.
+    """
+
     def get_icon(self):
         return 'fa-line-chart'
 

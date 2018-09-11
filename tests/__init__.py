@@ -15,6 +15,18 @@ t = gettext.translation('messages', locales_path, ["pt"],
 t.install()
 
 
+def debug_ast(code, expected_code):
+    print("""
+    Code
+    {sep}
+    {code}
+    {sep}
+    Expected
+    {sep}
+    {expected}
+    """.format(code=code, sep='-' * 20, expected=expected_code))
+
+
 def format_code_comparison(node1, node2):
     lines_left = node1.split('\n')
     lines_right = node2.split('\n')
