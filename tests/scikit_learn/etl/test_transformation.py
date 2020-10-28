@@ -10,7 +10,25 @@ def test_transformation_success():
         'petalwidth', 'petallength'], slice_size)]
 
     arguments = {
-        'parameters': {},
+        'parameters': { "expression":
+                            {"value":
+                                 [
+                                     {"expression": "upper(petallength)",
+                                      "alias": "",
+                                      "tree":
+                                         {"type": "CallExpression",
+                                          "arguments":
+                                             [
+                                                 {"type": "Identifier", "name": "coluna"}
+                                             ],
+                                          "callee":
+                                             {"type": "Identifier", "name": "upper"}
+                                          },
+                                      "error": ''
+                                      }
+                                 ]
+                            }
+        },
         'named_inputs': {
             'input data': df[0],
         },
@@ -19,6 +37,7 @@ def test_transformation_success():
         }
     }
     instance = TransformationOperation(**arguments)
-    result = util.execute(instance.generate_code(), 
-                          dict([df]))
-    assert result['out'].equals(util.iris(size=slice_size))
+    print(instance.generate_code())
+    #result = util.execute(instance.generate_code(),
+                          #dict([df]))
+    #assert result['out'].equals(util.iris(size=slice_size))

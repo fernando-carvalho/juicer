@@ -2,7 +2,6 @@ from tests.scikit_learn import util
 from juicer.scikit_learn.etl_operation import IntersectionOperation
 import pytest
 import pandas as pd
-
 # Intersection
 # 
 def test_intersection_success():
