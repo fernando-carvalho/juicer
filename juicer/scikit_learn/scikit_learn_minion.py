@@ -116,7 +116,8 @@ class ScikitLearnMinion(Minion):
         if msg is None and self.active_messages == 0:
             self._timeout_termination()
             return
-
+        if msg is None:
+            return 
         msg_info = json.loads(msg)
 
         # Sanity check: this minion should not process messages from another
@@ -143,17 +144,21 @@ class ScikitLearnMinion(Minion):
 
             lang = workflow.get('locale', self.current_lang)
 
+            t = gettext.translation('messages', locales_path, [lang],
+                                    fallback=True)
+            t.install()
+
             self._emit_event(room=job_id, namespace='/stand')(
                 name='update job',
                 message=_('Running job with lang {}/{}').format(
                     lang, self.current_lang),
                 status='RUNNING', identifier=job_id)
 
-            t = gettext.translation('messages', locales_path, [lang],
-                                    fallback=True)
-            t.install()
-
             app_configs = msg_info.get('app_configs', {})
+
+            # Sample size can be informed in API, limited to 1000 rows.
+            self.transpiler.sample_size = min(1000, int(app_configs.get(
+                'sample_size', 50)))
 
             if self.job_future:
                 self.job_future.result()
@@ -186,7 +191,7 @@ class ScikitLearnMinion(Minion):
     def _perform_execute(self, job_id, workflow, app_configs):
 
         # Sleeps 1s in order to wait for client join notification room
-        time.sleep(1)
+        # time.sleep(1)
 
         result = True
         start = timer()
@@ -211,7 +216,8 @@ class ScikitLearnMinion(Minion):
 
             with codecs.open(generated_code_path, 'w', 'utf8') as out:
                 self.transpiler.transpile(
-                    loader.workflow, loader.graph, {}, out, job_id)
+                    loader.workflow, loader.graph, {}, out, job_id, 
+                    persist=app_configs.get('persist', True))
 
             # Get rid of .pyc file if it exists
             if os.path.isfile('{}c'.format(generated_code_path)):
@@ -400,7 +406,6 @@ class ScikitLearnMinion(Minion):
         }
         self.state_control.push_app_queue(self.app_id,
                                           json.dumps(msg_processed))
-        log.info('Sending message processed message: %s' % msg_processed)
 
     # noinspection PyUnusedLocal
     def _terminate(self, _signal, _frame):

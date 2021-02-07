@@ -51,7 +51,7 @@ class Transpiler(object):
     DATA_SOURCE_OPS = ['data-reader']
     __slots__ = (
         'configuration', 'current_task_id', 'operations', 'port_id_to_port',
-        'slug_to_op_id', 'template_dir'
+        'slug_to_op_id', 'template_dir', 'sample_size'
     )
 
     def __init__(self, configuration, template_dir, slug_to_op_id=None,
@@ -70,6 +70,7 @@ class Transpiler(object):
         self.configuration = configuration
         self.template_dir = template_dir
         self.current_task_id = None
+        self.sample_size = 50
 
     def _assign_operations(self):
         raise NotImplementedError()
@@ -91,7 +92,7 @@ class Transpiler(object):
 
     def get_audit_info(self, graph, workflow, task, parameters):
         result = []
-        task['ancestors'] = nx.ancestors(graph, task['id'])
+        task['ancestors'] = list(nx.ancestors(graph, task['id']))
         ancestors = [graph.node[task_id] for task_id in task['ancestors']]
         ancestors_data_source = [int(p['forms']['data_source'].get('value', 0))
                                  for p in ancestors if p['is_data_source']]
@@ -132,7 +133,7 @@ class Transpiler(object):
     def generate_code(self, graph, job_id, out, params, ports,
                       sorted_tasks_id, state, task_hash, using_stdout,
                       workflow, deploy=False, export_notebook=False,
-                      plain=False):
+                      plain=False, persist=True):
 
         if deploy:
             # To be able to convert, workflow must obey all these rules:
@@ -329,7 +330,7 @@ class Transpiler(object):
                 out.write(gen_source_code)
             stand_config = self.configuration.get('juicer', {}).get(
                 'services', {}).get('stand')
-            if stand_config and job_id:
+            if stand_config and job_id and persist:
                 # noinspection PyBroadException
                 try:
                     stand_service.save_job_source_code(
@@ -339,7 +340,8 @@ class Transpiler(object):
                     log.exception(str(ex))
 
     def transpile(self, workflow, graph, params, out=None, job_id=None,
-                  state=None, deploy=False, export_notebook=False, plain=False):
+                  state=None, deploy=False, export_notebook=False, plain=False, 
+                  persist=True):
         """ Transpile the tasks from Lemonade's workflow into code """
 
         using_stdout = out is None
@@ -412,7 +414,8 @@ class Transpiler(object):
                            ports, nx.topological_sort(graph), state,
                            hashlib.sha1(),
                            using_stdout, workflow, deploy, export_notebook,
-                           plain=plain)
+                           plain=plain,
+                           persist=persist)
 
     def get_data_sources(self, workflow):
         return len(
@@ -431,6 +434,8 @@ class TranspilerUtils(object):
         self.transpiler = transpiler
         self.imports = set()
         self.custom_functions = dict()
+        if transpiler:
+            self.sample_size = transpiler.sample_size
 
     @staticmethod
     def _get_enabled_tasks_to_execute(instances):

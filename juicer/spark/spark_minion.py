@@ -362,15 +362,16 @@ class SparkMinion(Minion):
 
             lang = workflow.get('locale', self.current_lang)
 
+            t = gettext.translation('messages', locales_path, [lang],
+                                    fallback=True)
+            t.install()
+
             self._emit_event(room=job_id, namespace='/stand')(
                 name='update job',
                 message=_('Running job with lang {}/{}').format(
                     lang, self.current_lang),
                 status='RUNNING', identifier=job_id)
 
-            t = gettext.translation('messages', locales_path, [lang],
-                                    fallback=True)
-            t.install()
 
             # TODO: We should consider the case in which the spark session is
             # already instantiated and this new request asks for a different set
@@ -381,6 +382,10 @@ class SparkMinion(Minion):
             # existing
             # (old configs) spark session?
             app_configs = msg_info.get('app_configs', {})
+
+            # Sample size can be informed in API, limited to 1000 rows.
+            self.transpiler.sample_size = min(1000, int(app_configs.get(
+                'sample_size', 50)))
 
             if self.job_future:
                 self.job_future.result()
@@ -446,7 +451,7 @@ class SparkMinion(Minion):
             with codecs.open(generated_code_path, 'w', 'utf8') as out:
                 self.transpiler.transpile(
                     loader.workflow, loader.graph, {}, out, job_id,
-                    self._state)
+                    self._state, persist=app_configs.get('persist', True))
             # force the spark context creation
             self.get_or_create_spark_session(loader, app_configs, job_id)
 

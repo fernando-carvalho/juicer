@@ -229,6 +229,59 @@ def emit_sample(task_id, df, emit_event, name, size=50, notebook=False,
 
 
 def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False):
+    import pandas as pd
+    from pandas.api import types 
+
+    result = {}
+    type_mappings = {'Int64': 'Integer', 'Float64': 'Decimal', 'object': 'Text',
+            'datetime64[ns]': 'Datetime'}
+    result['attributes'] = [{'label': i, 'key': i, 
+        'type': type_mappings.get(str(f), str(f))} 
+            for i, f in zip(df.columns, df.dtypes)]
+    rows = []
+
+    number_types = (int, float, decimal.Decimal)
+
+    truncated = []
+    for label, row in df.head(size).iterrows():
+        new_row = []
+        for col in df.columns:
+            col_py_type = type(row[col])
+            if pd.isnull(row[col]):
+                value = None
+            elif types.is_datetime64_dtype(df[col].dtypes):
+                value = row[col].isoformat()
+            elif types.is_numeric_dtype(col_py_type):
+                value = row[col]
+            elif types.is_datetime64_any_dtype(col_py_type): # list of dates
+                value = '[' + ','.join(['"{}'.format(d.isoformat()) 
+                    for d in row[col]]) + ']'
+            elif isinstance(col, list):
+                value = '[' + ', '.join([str(x) if isinstance(x, number_types)
+                                   else "'{}'".format(x) for x in row[col]]) + ']'
+            elif types.is_string_dtype(col_py_type):
+                # truncate column if size is bigger than 200 chars.
+                value = row[col]
+                if len(value) > 200:
+                    value = value[:150] + ' (trunc.)'
+                    truncated.append(col)
+            else:
+                value = json.dumps(row[col], cls=CustomEncoder)
+
+            new_row.append(value)
+        rows.append(new_row)
+    result['rows'] = rows
+    result['total'] = len(df)
+    result['truncated'] = truncated
+
+    emit_event('update task', status='COMPLETED',
+               identifier=task_id,
+               message=result,
+               type='OBJECT', title=_('Sample data for {}').format(name),
+               task={'id': task_id})
+
+
+def old_emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False):
     from juicer.spark.reports import SimpleTableReport
     headers = list(df.columns)
 
@@ -240,8 +293,6 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False):
         rows.append(new_row)
         for col in row:
             if isinstance(col, str):
-                value = col
-            elif isinstance(col, str):
                 value = col
             elif isinstance(col, (datetime.datetime, datetime.date)):
                 value = col.isoformat()

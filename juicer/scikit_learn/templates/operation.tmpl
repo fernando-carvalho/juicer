@@ -130,7 +130,8 @@ def {{task.operation.slug.replace('-', '_')}}_{{instance.order}}(sklearn_session
     outputs = [(name, out) for name, out in results.items() if isinstance(out, pd.DataFrame)]
     {%- if instance.has_code and instance.enabled and instance.contains_sample %}
     for name, out in outputs:
-        dataframe_util.emit_sample_sklearn(task_id, out, emit_event, name)
+        dataframe_util.emit_sample_sklearn(task_id, out, emit_event, name, 
+            size={{transpiler.sample_size}})
     {%- endif %}
     {%- if instance.has_code and instance.enabled and instance.contains_schema %}
     for name, out in outputs:

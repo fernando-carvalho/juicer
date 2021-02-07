@@ -918,6 +918,7 @@ class SelectOperation(Operation):
     - The list of columns selected.
     """
     ATTRIBUTES_PARAM = 'attributes'
+    ALIASES_PARAM = 'aliases'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         Operation.__init__(self, parameters, named_inputs, named_outputs)
@@ -931,6 +932,19 @@ class SelectOperation(Operation):
                 _("Parameter '{}' must be informed for task {}").format
                 (self.ATTRIBUTES_PARAM, self.__class__))
 
+        self.aliases = None
+        if self.ALIASES_PARAM in parameters:
+            self.aliases = parameters.get(self.ALIASES_PARAM, [])
+            if len(self.aliases) > 0 and len(self.aliases) != len(
+                    self.attributes):
+                raise ValueError(
+                    _("Aliases must be empty or have the same size as attributes"))
+            else:
+                self.new_aliases = ','.join(['"{}": "{}"'.format(
+                                self.attributes[i], x)
+                                  for i, x in enumerate(self.aliases)
+                                  if self.attributes[i] != x])
+
         self.has_code = len(self.named_inputs) == 1 and any(
             [len(self.named_outputs) >= 1, self.contains_results()])
         self.output = self.named_outputs.get(
@@ -938,9 +952,17 @@ class SelectOperation(Operation):
 
     def generate_code(self):
         if self.has_code:
-            code = "{output} = {input}[[{column}]]" \
-                .format(output=self.output, column=self.cols,
-                        input=self.named_inputs['input data'])
+            if self.aliases:
+                code = """
+                names = {{{names}}}
+                {output} = {input}[[{column}]].rename(columns=names)""" \
+                    .format(output=self.output, column=self.cols,
+                            input=self.named_inputs['input data'], 
+                            names=self.new_aliases)
+            else:
+                code = "{output} = {input}[[{column}]]" \
+                    .format(output=self.output, column=self.cols,
+                            input=self.named_inputs['input data'])
             return dedent(code)
 
 
