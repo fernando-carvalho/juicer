@@ -28,6 +28,18 @@ class ResultType:
     VISUALIZATION = 'VISUALIZATION'
     MODEL = 'MODEL'
 
+class SampleConfiguration(object):
+    """ Allow to set configuration options for operation sampling. """
+    __slots__ = ('size', 'infer', 'use_types', 'describe')
+    def __init__(self, size=50, infer=False, describe=False, use_types=None):
+        if use_types is None:
+            self.use_types = []
+        self.size = size
+        self.infer = infer
+        self.describe = describe
+
+    def get_config(self):
+        return repr([self.size, self.infer, self.describe, self.use_types])
 
 class Operation(object):
     """ Defines an operation in Lemonade """
@@ -35,7 +47,7 @@ class Operation(object):
                  'named_outputs', 'multiple_inputs', 'has_code',
                  'expected_output_ports', 'out_degree', 'order',
                  'supports_cache', 'config', 'deployable', 'plain',
-                 'transpiler_utils')
+                 'transpiler_utils', 'sample_configuration')
 
     def __init__(self, parameters, named_inputs, named_outputs):
         self.parameters = parameters
@@ -84,6 +96,12 @@ class Operation(object):
         # Subclasses should override this
         self.output = self.named_outputs.get(
             'output data', 'out_task_{}'.format(self.order))
+
+        self.sample_configuration = SampleConfiguration(
+            infer=parameters.get('infer_sample') in [1, '1', 'true', True],
+            size=int(parameters.get('sample_size', 50)),
+            describe=parameters.get('describe_sample') in [1, '1', 'true', True],
+            use_types=parameters.get('use_types_in_sample'))
 
     def generate_code(self):
         raise NotImplementedError(

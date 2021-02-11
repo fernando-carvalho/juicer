@@ -251,7 +251,7 @@ class ScikitLearnMinion(Minion):
 
             # We update the state incrementally, i.e., new task results can be
             # overwritten but never lost.
-            # self._state.update(new_state)
+            self._state.update(new_state)
 
         except UnicodeEncodeError as ude:
             message = self.MNN006[1].format(ude)

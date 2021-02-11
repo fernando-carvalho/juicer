@@ -105,33 +105,41 @@ def {{task.operation.slug.replace('-', '_')}}_{{instance.order}}(sklearn_session
     {%- endif %}
 
     start = timer()
-    # --- Begin operation code ---- #
-    {{instance.generate_code().strip() | indent(width=4, indentfirst=False)}}
-    # --- End operation code ---- #
-    {%- if not plain %}
-    {%- for gen_result in instance.get_generated_results() %}
-    emit_event(name='task result', message=_('{{gen_result.type}}'),
-               status='COMPLETED',
-               identifier='{{task.operation.id}}/{{task_id}}')
-    {%- endfor %}
+    # First we verify whether this task's result is cached.
+    results = {% if instance.supports_cache -%}
+    get_cached_state(
+        task_id, cached_state, emit_event, sklearn_session,
+        '{{instance.parameters.hash}}')
+    {% else %} None
     {%- endif %}
-
-    results = {
-        'task_name': '{{task.name}}',
-      {%- set is_leaf = instance.out_degree == 0 %}
-      {%- for port_name,out in zip(task.port_names, instance.get_output_names(',').split(',')) %}
-        {%- if port_name and out %}
-         '{{port_name}}': {{out}},
+    if results is None:
+        # --- Begin operation code ---- #
+        {{instance.generate_code().strip() | indent(width=8, indentfirst=False)}}
+        # --- End operation code ---- #
+        {%- if not plain %}
+        {%- for gen_result in instance.get_generated_results() %}
+        emit_event(name='task result', message=_('{{gen_result.type}}'),
+                   status='COMPLETED',
+                   identifier='{{task.operation.id}}/{{task_id}}')
+        {%- endfor %}
         {%- endif %}
-      {%- endfor %}
-    }
 
+        results = {
+            'task_name': '{{task.name}}',
+          {%- set is_leaf = instance.out_degree == 0 %}
+          {%- for port_name,out in zip(task.port_names, instance.get_output_names(',').split(',')) %}
+            {%- if port_name and out %}
+             '{{port_name}}': {{out}},
+            {%- endif %}
+          {%- endfor %}
+        }
     {%- if instance.contains_results() %}
     outputs = [(name, out) for name, out in results.items() if isinstance(out, pd.DataFrame)]
     {%- if instance.has_code and instance.enabled and instance.contains_sample %}
+    size, infer, describe, use_types = {{ instance.sample_configuration.get_config() }}
     for name, out in outputs:
         dataframe_util.emit_sample_sklearn(task_id, out, emit_event, name, 
-            size={{transpiler.sample_size}})
+            size=size, infer=infer, describe=describe, use_types=use_types)
     {%- endif %}
     {%- if instance.has_code and instance.enabled and instance.contains_schema %}
     for name, out in outputs:
@@ -162,6 +170,18 @@ def emit_task_completed(task_id, sklearn_session, emit_event):
 
 def get_results(_task_futures, task_id):
     return _task_futures[task_id].result() if task_id in _task_futures else None
+
+def get_cached_state(task_id, cached_state, emit_event, spark_session,
+                     task_hash):
+    results = None
+    if task_id in cached_state:
+        cached, _hash = cached_state.get(task_id)
+        if _hash == task_hash:
+            emit_event(name='update task',
+                message=_('Task running (cached data)'), status='RUNNING',
+                identifier=task_id)
+            results = cached
+    return results
 
 def main(sklearn_session, cached_state, emit_event):
     """ Run generated code """

@@ -228,27 +228,61 @@ def emit_sample(task_id, df, emit_event, name, size=50, notebook=False,
                task={'id': task_id})
 
 
-def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False):
+def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False, 
+        describe=False, infer=False, use_types=None):
+
+    import io
     import pandas as pd
     from pandas.api import types 
 
     result = {}
     type_mappings = {'Int64': 'Integer', 'Float64': 'Decimal', 'object': 'Text',
-            'datetime64[ns]': 'Datetime'}
-    result['attributes'] = [{'label': i, 'key': i, 
-        'type': type_mappings.get(str(f), str(f))} 
-            for i, f in zip(df.columns, df.dtypes)]
+            'datetime64[ns]': 'Datetime', 'float64': 'Decimal', 'int64': 'Integer',
+            'boolean': 'Boolean'}
+
+    df2 = df
+    # Decide which data frame to use.
+    # UI may require original data, represented as string and 
+    # without casting. But in order to describe the data set,
+    # a inferred data frame (or a user provided types) must be 
+    # used.
+    if describe:
+        converters = {}
+        if use_types:
+            pandas_converters = {
+                'Integer': lambda v: pd.to_numeric(v, errors='coerce'),
+                'Decimal': lambda v: pd.to_numeric(v, errors='coerce'),
+                'DateTime': lambda v: pd.to_datetime(v, errors='coerce'),
+                'Boolean': bool,
+            }
+            # User provided types for attributes
+            for attr, dtype in use_types.items():
+                f = pandas_converters.get(dtype)
+                if f:
+                    converters[attr] = f
+        if infer:
+            # df.infer_objects() is not working.
+            # save as CSV to infer data types
+            buf = io.StringIO()
+            df.to_csv(buf, index=False)
+            buf.seek(0)
+            df2 = pd.read_csv(buf, converters=converters) 
+
     rows = []
 
     number_types = (int, float, decimal.Decimal)
 
     truncated = []
-    for label, row in df.head(size).iterrows():
+    for label, row in df.head(size).fillna('').iterrows():
         new_row = []
         for col in df.columns:
             col_py_type = type(row[col])
-            if pd.isnull(row[col]):
-                value = None
+            if types.is_string_dtype(col_py_type):
+                # truncate column if size is bigger than 200 chars.
+                value = row[col]
+                if len(value) > 60:
+                    value = value[:60] + ' (trunc.)'
+                    truncated.append(col)
             elif types.is_datetime64_dtype(df[col].dtypes):
                 value = row[col].isoformat()
             elif types.is_numeric_dtype(col_py_type):
@@ -259,20 +293,28 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False):
             elif isinstance(col, list):
                 value = '[' + ', '.join([str(x) if isinstance(x, number_types)
                                    else "'{}'".format(x) for x in row[col]]) + ']'
-            elif types.is_string_dtype(col_py_type):
-                # truncate column if size is bigger than 200 chars.
-                value = row[col]
-                if len(value) > 200:
-                    value = value[:150] + ' (trunc.)'
-                    truncated.append(col)
             else:
                 value = json.dumps(row[col], cls=CustomEncoder)
 
             new_row.append(value)
         rows.append(new_row)
+    
+    result['attributes'] = [{'label': i, 'key': i, 
+        'type': type_mappings.get(str(f), str(f))} 
+            for i, f in zip(df2.columns, df2.dtypes)]
+
     result['rows'] = rows
-    result['total'] = len(df)
-    result['truncated'] = truncated
+    if describe:
+        missing_counters = df2.isna().sum().to_dict()    
+        result['total'] = len(df)
+        for attr in result['attributes']:
+            attr['missing_count'] = missing_counters.get(attr['key'], 0)
+            attr['count'] = result['total']
+            attr['invalid_count'] = 0
+
+        result['missing'] = {'1': [2, 3, 6, 9], '3': [3, 12, 16]}
+        result['invalid'] = {'2': [4, 5, 7, 10], '4': [1, 2, 6]}
+        result['truncated'] = truncated
 
     emit_event('update task', status='COMPLETED',
                identifier=task_id,
