@@ -227,14 +227,23 @@ def emit_sample(task_id, df, emit_event, name, size=50, notebook=False,
                type='HTML', title=title,
                task={'id': task_id})
 
+def is_float_or_null(v):
+    try:
+        if v is None:
+            return True
+        float(v)
+        return True
+    except:
+        return False
 
 def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False, 
         describe=False, infer=False, use_types=None):
 
     import io
     import pandas as pd
+    from collections import defaultdict
     from pandas.api import types 
-
+        
     result = {}
     type_mappings = {'Int64': 'Integer', 'Float64': 'Decimal', 'object': 'Text',
             'datetime64[ns]': 'Datetime', 'float64': 'Decimal', 'int64': 'Integer',
@@ -246,7 +255,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     # without casting. But in order to describe the data set,
     # a inferred data frame (or a user provided types) must be 
     # used.
-    if describe:
+    if describe and False:
         converters = {}
         if use_types:
             pandas_converters = {
@@ -273,9 +282,16 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     number_types = (int, float, decimal.Decimal)
 
     truncated = []
-    for label, row in df.head(size).fillna('').iterrows():
+    missing = defaultdict(list)
+    invalid = defaultdict(list)
+    for y, (label, row) in enumerate(df.head(size).iterrows()):
         new_row = []
-        for col in df.columns:
+        for x, col in enumerate(df.columns):
+            if pd.isnull(row[col]) or (not row[col] and row[col] != 0):
+                missing[y].append(x)
+                new_row.append('')
+                continue
+
             col_py_type = type(row[col])
             if types.is_string_dtype(col_py_type):
                 # truncate column if size is bigger than 200 chars.
@@ -311,9 +327,29 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
             attr['missing_count'] = missing_counters.get(attr['key'], 0)
             attr['count'] = result['total']
             attr['invalid_count'] = 0
+            
 
-        result['missing'] = {'1': [2, 3, 6, 9], '3': [3, 12, 16]}
-        result['invalid'] = {'2': [4, 5, 7, 10], '4': [1, 2, 6]}
+
+        pandas_converters = {
+            'Integer': lambda v: v.isdigit(),
+            'Decimal': lambda v: is_float_or_null(v),
+            'DateTime': lambda v: True,
+            'Boolean': lambda v: True,
+        }
+        for i, attr in enumerate(df.columns):
+            f = None
+            if pd.api.types.is_integer_dtype(df[attr].dtype):
+                f = pandas_converters.get('Integer')
+            elif pd.api.types.is_numeric_dtype(df[attr].dtype):
+                f = pandas_converters.get('Decimal')
+        
+            if f:
+                df_invalid = df[~df[attr].apply(is_float_or_null) & df[attr].notnull()]
+                result['attributes'][i]['invalid_count'] = len(df_invalid)
+                invalid[attr].extend(df_invalid[:size].index.to_numpy())
+
+        result['missing'] = missing 
+        result['invalid'] = invalid
         result['truncated'] = truncated
 
     emit_event('update task', status='COMPLETED',
