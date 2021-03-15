@@ -47,7 +47,7 @@ class Operation(object):
                  'named_outputs', 'multiple_inputs', 'has_code',
                  'expected_output_ports', 'out_degree', 'order',
                  'supports_cache', 'config', 'deployable', 'plain',
-                 'transpiler_utils', 'sample_configuration')
+                 'transpiler_utils', 'sample_configuration', 'template')
 
     def __init__(self, parameters, named_inputs, named_outputs):
         self.parameters = parameters
@@ -108,6 +108,9 @@ class Operation(object):
             _("Method generate_code should be implemented "
               "in {} subclass").format(self.__class__))
 
+    def render_template(self, context: dict):
+        return self.transpiler_utils.render_template(self.template, context)
+
     # noinspection PyMethodMayBeStatic
     def get_auxiliary_code(self):
         return []
@@ -118,6 +121,9 @@ class Operation(object):
          Results can be models and visualizations (for while).
         """
         return []
+
+    def get_port_multiplicity(self, port):
+        return self.parameters.get('multiplicity',{}).get('input data', 1)
 
     @property
     def enabled(self):
