@@ -48,6 +48,7 @@ class ScikitLearnTranspiler(Transpiler):
             'add-columns': etl.AddColumnsOperation,
             'add-rows': etl.UnionOperation,
             'aggregation': etl.AggregationOperation,  # TODO: agg sem groupby
+            'cast': etl.CastOperation,
             'clean-missing': etl.CleanMissingOperation,
             'difference': etl.DifferenceOperation,
             'drop': etl.DropOperation,
