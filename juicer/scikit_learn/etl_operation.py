@@ -1057,6 +1057,7 @@ class TransformationOperation(Operation):
     """
     ALIAS_PARAM = 'alias'
     EXPRESSION_PARAM = 'expression'
+    POSITION_PARAM = 'position'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         Operation.__init__(self, parameters, named_inputs, named_outputs)
@@ -1066,6 +1067,16 @@ class TransformationOperation(Operation):
         if self.has_code:
             if self.EXPRESSION_PARAM in parameters:
                 self.expressions = parameters[self.EXPRESSION_PARAM]
+                self.positions = parameters.get(self.POSITION_PARAM)
+                num_expressions = len(self.expressions)
+                if self.positions is None or len(self.positions) == 0:
+                    self.positions = [-1] * num_expressions
+                elif len(self.positions) > num_expressions:
+                    self.positions = [int(x) for x in self.positions[:num_expressions]]
+                else:
+                    complement = num_expressions - len(self.positions)
+                    self.positions = [int(x) for x in self.positions] + (
+                            [-1] * complement)
             else:
                 msg = _("Parameter must be informed for task {}.")
                 raise ValueError(
@@ -1089,14 +1100,24 @@ class TransformationOperation(Operation):
         copy_code = ".copy()" \
             if self.parameters['multiplicity']['input data'] > 1 else ""
 
+        import_clause = '\n'.join([(8 * ' ' + imp) for imp in 
+            expression.imports.split('\n')])
         code = """
+        {imp}
         {out} = {input}{copy_code}
         functions = [{expr}]
-        for col, function in functions:
-            {out}[col] = {out}.apply(function, axis=1)
+        positions = {positions}
+        for i, (col, function) in enumerate(functions):
+            if positions[i] == -1:
+                {out}[col] = {out}.apply(function, axis=1)
+            else:
+                {out}.insert(positions[i], col, {out}.apply(function, axis=1))
+
         """.format(copy_code=copy_code,
                    out=self.output, input=self.named_inputs['input data'],
-                   expr=functions)
+                   expr=functions, 
+                   imp=import_clause,
+                   positions=repr(self.positions))
         return dedent(code)
 
 
@@ -1223,9 +1244,71 @@ class SplitKFoldOperation(Operation):
                                attribute=self.attribute)
                 return dedent(code)
 
+class CastOperation(Operation):
+    """ Change attribute type.
+    """
+
+    template = """
+        {%- if op.get_port_multiplicity('input data') > 1 %}
+        {{op.output}} = {{op.input}}.copy()
+        {%- else %}
+        {{op.output}} = {{op.input}}
+        {%- endif %}
+
+        {%- for attr in op.attributes %}
+        {{op.output}}['{{attr.attribute}}'] = 
+        {%- if attr.type == 'Integer' -%}
+            pd.to_numeric(
+            {{op.output}}['{{attr.attribute}}'], errors='{{op.errors}}').astype(
+                pd.Int64Dtype())
+        {%- elif attr.type == 'Decimal' -%}
+            pd.to_numeric({{op.output}}['{{attr.attribute}}'], 
+                          errors='{{op.errors}}')
+        {%- elif attr.type == 'Boolean' -%}
+            {{op.output}}.astype('bool')
+        {%- elif attr.type == 'DateTime' -%}
+            pd.to_datetime({{op.output}}['{{attr.attribute}}'], 
+                           errors='{{op.errors}}',
+                           format='{{op.format}}')
+        {%-endif %}
+        {%- endfor %}
+    """
+    ATTRIBUTES_PARAM = 'attributes'
+    ERROR_PARAM = 'errors'
+
+    def __init__(self, parameters, named_inputs, named_outputs):
+        Operation.__init__(self, parameters, named_inputs, named_outputs)
+
+        self.has_code = len(self.named_inputs) == 1 and any(
+            [len(self.named_outputs) >= 1, self.contains_results()])
+
+        self.output = self.named_outputs.get(
+            'output data', 'output_data_{}'.format(self.order))
+        self.input = self.named_inputs.get('input data')
+
+        self.errors = parameters.get(self.ERROR_PARAM, 'raise') or 'raise'
+        if self.has_code:
+            if self.ATTRIBUTES_PARAM in parameters:
+                self.attributes = parameters[self.ATTRIBUTES_PARAM]
+            else:
+                raise ValueError(
+                    _("Parameter '{}' must be informed for task {}").format
+                    ('attributes', self.__class__))
+
+    @property
+    def get_data_out_names(self, sep=','):
+        return self.output
+
+    def generate_code(self):
+        if self.has_code:
+            return dedent(self.render_template({'op': self}))
+
+
 # Custom functions
 def _collect_list(x):
     return x.tolist()
 
 def _collect_set(x):
     return set(x.tolist())
+
+
