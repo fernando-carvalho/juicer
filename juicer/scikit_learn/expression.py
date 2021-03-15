@@ -200,7 +200,7 @@ class Expression:
                 self.imports += imp
         arguments = ', '.join(
             [self.parse(x, params) for x in spec['arguments']])
-        result = " ''.join(c for c in unicodedata.normalize('NFD', unicode({})) if unicodedata.category(c) != 'Mn')".format(
+        result = " ''.join(c for c in unicodedata.normalize('NFD', {}) if unicodedata.category(c) != 'Mn')".format(
             arguments)
 
         return result
@@ -543,6 +543,7 @@ class Expression:
             'atan2': lambda s, p: self.get_numpy_function_call(s, p, 'arctan2'),
             # TODO handle differences: python adds 0b to the result
             'bin': self.get_function_call,
+            'capitalize': lambda s, p: self.get_function_call(s, p, 'str.capitalize'),
             'current_date': lambda s, p: 'datetime.date.today()',
             'current_timestamp': lambda s, p: 'datetime.datetime.now()',
             # 'datediff': lambda s, p: '{}[::-1]'.format(self.parse(s['arguments'][0], p))
@@ -654,6 +655,7 @@ class Expression:
             ),
             'substring': self.get_substring_function_call,
             'substring_index': self.get_substring_index_function_call,
+            'title': lambda s, p: self.get_function_call(s, p, 'str.title'),
             'to_date': self.get_to_timestamp_function,
             # TODO: Handle some data types in JSON
             'to_json': lambda s, p: self.get_function_call(s, p, 'json.dumps'),
@@ -678,6 +680,6 @@ class Expression:
                 p, 'int'),
             'unix_timestamp':
                 lambda s, p: self.get_function_call(s, p, 'pd.to_datetime'),
-            "upper": "upper",
+            'upper': lambda s, p: self.get_function_call(s, p, 'str.upper'),
         }
         self.functions.update(others_functions)
