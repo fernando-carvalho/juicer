@@ -287,22 +287,26 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     for y, (label, row) in enumerate(df.head(size).iterrows()):
         new_row = []
         for x, col in enumerate(df.columns):
-            if pd.isnull(row[col]) or (not row[col] and row[col] != 0):
+            col_py_type = type(row[col])
+            if (col_py_type != list and (
+                    pd.isnull(row[col]) or (not row[col] and row[col] != 0))):
                 missing[y].append(x)
                 new_row.append('')
                 continue
 
-            col_py_type = type(row[col])
-            if types.is_string_dtype(col_py_type):
+            if types.is_datetime64_dtype(df[col].dtypes):
+                value = row[col].isoformat()
+            elif types.is_string_dtype(col_py_type):
                 # truncate column if size is bigger than 200 chars.
                 value = row[col]
                 if len(value) > 60:
                     value = value[:60] + ' (trunc.)'
                     truncated.append(col)
-            elif types.is_datetime64_dtype(df[col].dtypes):
-                value = row[col].isoformat()
             elif types.is_numeric_dtype(col_py_type):
-                value = row[col]
+                if not types.is_integer_dtype(col_py_type):
+                    value = round(row[col], 8)
+                else:
+                    value = row[col]
             elif types.is_datetime64_any_dtype(col_py_type): # list of dates
                 value = '[' + ','.join(['"{}'.format(d.isoformat()) 
                     for d in row[col]]) + ']'

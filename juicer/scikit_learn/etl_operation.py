@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
+import re
 from gettext import gettext
 from textwrap import dedent
 
@@ -919,15 +920,24 @@ class SelectOperation(Operation):
     """
     ATTRIBUTES_PARAM = 'attributes'
     ALIASES_PARAM = 'aliases'
+    EXCLUDE_PARAM = 'exclude'
+    RENAME_PARAM = 'rename'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         Operation.__init__(self, parameters, named_inputs, named_outputs)
+
+        self.has_code = len(self.named_inputs) == 1 and any(
+            [len(self.named_outputs) >= 1, self.contains_results()])
+
+        if not self.has_code:
+            return 
 
         if self.ATTRIBUTES_PARAM in parameters:
             self.attributes = parameters.get(self.ATTRIBUTES_PARAM)
             self.cols = ','.join(['"{}"'.format(x)
                                   for x in self.attributes])
-        else:
+        elif (self.EXCLUDE_PARAM not in parameters and 
+                self.RENAME_PARAM not in parameters):
             raise ValueError(
                 _("Parameter '{}' must be informed for task {}").format
                 (self.ATTRIBUTES_PARAM, self.__class__))
@@ -945,10 +955,18 @@ class SelectOperation(Operation):
                                   for i, x in enumerate(self.aliases)
                                   if self.attributes[i] != x])
 
-        self.has_code = len(self.named_inputs) == 1 and any(
-            [len(self.named_outputs) >= 1, self.contains_results()])
         self.output = self.named_outputs.get(
             'output projected data', 'projection_data_{}'.format(self.order))
+
+        self.exclude = None
+        self.rename = None
+        if self.EXCLUDE_PARAM in parameters:
+            self.exclude = parameters.get(self.EXCLUDE_PARAM)
+
+        # Rename is a list of list, where first element of inner list is 
+        # the original name and second is new name
+        if self.RENAME_PARAM in parameters:
+            self.rename = parameters.get(self.RENAME_PARAM)
 
     def generate_code(self):
         if self.has_code:
@@ -959,6 +977,21 @@ class SelectOperation(Operation):
                     .format(output=self.output, column=self.cols,
                             input=self.named_inputs['input data'], 
                             names=self.new_aliases)
+            elif self.exclude:
+                code = """
+                exclude = {exclude}
+                keep = [c for c in {input}.columns.tolist() if c not in exclude]
+                {output} = {input}[keep]
+                """.format(output=self.output, 
+                           exclude=repr(self.exclude),
+                           input=self.named_inputs['input data'])
+            elif self.rename:
+                code = """
+                to_rename = [{to_rename}]
+                {output} = {input}.rename(columns=dict(to_rename))
+                """.format(output=self.output, 
+                           to_rename=repr(self.rename),
+                           input=self.named_inputs['input data'])
             else:
                 code = "{output} = {input}[[{column}]]" \
                     .format(output=self.output, column=self.cols,
