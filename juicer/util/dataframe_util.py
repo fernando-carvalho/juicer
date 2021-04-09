@@ -281,7 +281,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
 
     number_types = (int, float, decimal.Decimal)
 
-    truncated = []
+    truncated = set()
     missing = defaultdict(list)
     invalid = defaultdict(list)
     for y, (label, row) in enumerate(df.head(size).iterrows()):
@@ -301,7 +301,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
                 value = row[col]
                 if len(value) > 60:
                     value = value[:60] + ' (trunc.)'
-                    truncated.append(col)
+                    truncated.add(col)
             elif types.is_numeric_dtype(col_py_type):
                 if not types.is_integer_dtype(col_py_type):
                     value = round(row[col], 8)
@@ -354,7 +354,11 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
 
         result['missing'] = missing 
         result['invalid'] = invalid
-        result['truncated'] = truncated
+        result['truncated'] = list(truncated)
+
+    print('*' * 20)
+    print(df2.dtypes)
+    print('*' * 20)
 
     emit_event('update task', status='COMPLETED',
                identifier=task_id,

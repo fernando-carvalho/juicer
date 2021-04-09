@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import re
+import json
 from six import text_type
+from gettext import gettext
 
 
 class Expression:
@@ -19,7 +21,8 @@ class Expression:
     def parse(self, tree, params):
 
         if tree['type'] == 'BinaryExpression':
-            result = "{} {} {}".format(
+            # Parenthesis are needed in some pandas/np expressions 
+            result = "({} {} {})".format(  
                 self.parse(tree['left'], params),
                 tree['operator'],
                 self.parse(tree['right'], params))
@@ -55,7 +58,7 @@ class Expression:
         elif tree['type'] == 'LogicalExpression':
             operators = {"&&": "&", "||": "|", "!": "~"}
             operator = operators[tree['operator']]
-            result = "({}) {} ({})".format(self.parse(tree['left'], params),
+            result = "{} {} {}".format(self.parse(tree['left'], params),
                                            operator,
                                            self.parse(tree['right'], params))
 
@@ -89,6 +92,20 @@ class Expression:
         # function_name = spec['callee']['name']
         result = " np.{}({})".format(function, arguments)
         return result
+
+    def get_when_function(self, spec, params):
+        """
+        Map when() function call in Lemonade into np.select() call in Pandas.
+        """
+        arguments = [self.parse(x, params) for x in spec['arguments']]
+        # print >> sys.stderr, group(arguments[:-1], 2)
+        code = "np.select([{}], [{}], default={})".format(
+            ', '.join(arguments[:-1:2]),
+            ', '.join(arguments[1::2]), 
+            arguments[-1])
+
+        return code
+
 
     def get_function_call(self, spec, params, alias=None):
         """
@@ -251,6 +268,29 @@ class Expression:
             raise ValueError(
                 _('Incorrect number of arguments ({}) for function {}'.format
                   (len(args), 'substring')))
+
+    def get_concat_call(self, spec, params):
+        args = spec['arguments'][:]
+
+        sep = ''
+        if spec['callee']['name'] == 'concat_ws':
+            if args[0]['type'] == 'Identifier':
+                raise ValueError(gettext('Separator cannot be an attribute'))
+            if len(args) < 3:
+                raise ValueError(gettext(
+                    'Invalid number of arguments for function concat_ws'))
+            sep = args.pop(0)['value']
+        elif len(args) < 2:
+            raise ValueError(gettext(
+                'Invalid number of arguments for function concat_ws'))
+        attributes = [
+                f'str({self.parse(arg, params)})' 
+                if arg['type'] == 'Identifier' 
+                else self.parse(arg, params)
+                for arg in args]
+
+        to_concat = ', '.join(attributes)
+        return f'{repr(sep)}.join([{to_concat}])'
 
     def get_substring_index_function_call(self, spec, params):
         raise ValueError(_('Unsupported function: {}').format(
@@ -421,6 +461,8 @@ class Expression:
             'less_equal': self.get_numpy_function_call,
             'greater': self.get_numpy_function_call,
             'less': self.get_numpy_function_call,
+
+            #
         }
 
         date_functions = {
@@ -543,6 +585,8 @@ class Expression:
             'atan2': lambda s, p: self.get_numpy_function_call(s, p, 'arctan2'),
             # TODO handle differences: python adds 0b to the result
             'bin': self.get_function_call,
+            'concat': self.get_concat_call,
+            'concat_ws': self.get_concat_call,
             'capitalize': lambda s, p: self.get_function_call(s, p, 'str.capitalize'),
             'current_date': lambda s, p: 'datetime.date.today()',
             'current_timestamp': lambda s, p: 'datetime.datetime.now()',
@@ -681,5 +725,7 @@ class Expression:
             'unix_timestamp':
                 lambda s, p: self.get_function_call(s, p, 'pd.to_datetime'),
             'upper': lambda s, p: self.get_function_call(s, p, 'str.upper'),
+
+            'when': self.get_when_function
         }
         self.functions.update(others_functions)

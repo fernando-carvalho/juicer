@@ -434,7 +434,7 @@ class ScikitLearnMinion(Minion):
 
     def process(self):
         log.info(_(
-            'Spark minion (workflow_id=%s,app_id=%s) started (pid=%s)'),
+            'Scikit-Learn minion (workflow_id=%s,app_id=%s) started (pid=%s)'),
             self.workflow_id, self.app_id, os.getpid())
         self.execute_process = multiprocessing.Process(
             name="minion", target=self.execute,

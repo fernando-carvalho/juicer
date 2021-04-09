@@ -1021,10 +1021,10 @@ class SortOperation(Operation):
                     self.ATTRIBUTES_PARAM, self.__class__))
 
         self.columns = [att['attribute'] for att in attributes]
-        self.ascending = [True for _ in range(len(self.columns))]
-        for i, v in enumerate([att['f'] for att in attributes]):
-            if v != "asc":
-                self.ascending[i] = False
+        self.ascending = []
+
+        for v in [att['f'] for att in attributes]:
+            self.ascending.append(v != "desc")
 
         self.has_code = len(self.named_inputs) == 1 and any(
             [len(self.named_outputs) >= 1, self.contains_results()])
@@ -1292,17 +1292,19 @@ class CastOperation(Operation):
         {{op.output}}['{{attr.attribute}}'] = 
         {%- if attr.type == 'Integer' -%}
             pd.to_numeric(
-            {{op.output}}['{{attr.attribute}}'], errors='{{op.errors}}').astype(
-                pd.Int64Dtype())
+            {{op.output}}['{{attr.attribute}}'], errors='{{op.errors}}'
+                ).astype(int)
         {%- elif attr.type == 'Decimal' -%}
             pd.to_numeric({{op.output}}['{{attr.attribute}}'], 
                           errors='{{op.errors}}')
         {%- elif attr.type == 'Boolean' -%}
             {{op.output}}.astype('bool')
-        {%- elif attr.type == 'DateTime' -%}
+        {%- elif attr.type in ('Date', 'DateTime', 'Datetime', 'Time') -%}
             pd.to_datetime({{op.output}}['{{attr.attribute}}'], 
                            errors='{{op.errors}}',
                            format='{{op.format}}')
+        {%- elif attr.type == 'Text' -%}
+            {{op.output}}['{{attr.attribute}}'].astype(str)
         {%-endif %}
         {%- endfor %}
     """
