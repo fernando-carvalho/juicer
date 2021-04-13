@@ -9,6 +9,7 @@ import datetime
 import re
 import simplejson
 from six import text_type
+from collections.abc import Sequence
 import collections
 
 
@@ -247,7 +248,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     result = {}
     type_mappings = {'Int64': 'Integer', 'Float64': 'Decimal', 'object': 'Text',
             'datetime64[ns]': 'Datetime', 'float64': 'Decimal', 'int64': 'Integer',
-            'boolean': 'Boolean'}
+            'bool': 'Boolean', 'array': 'Array'}
 
     df2 = df
     # Decide which data frame to use.
@@ -284,10 +285,14 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     truncated = set()
     missing = defaultdict(list)
     invalid = defaultdict(list)
+
+    dtypes = df2.dtypes[:]
     for y, (label, row) in enumerate(df.head(size).iterrows()):
         new_row = []
         for x, col in enumerate(df.columns):
-            col_py_type = type(row[col])
+
+            col_value = row[col]
+            col_py_type = type(col_value)
             if (col_py_type != list and (
                     pd.isnull(row[col]) or (not row[col] and row[col] != 0))):
                 missing[y].append(x)
@@ -296,12 +301,6 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
 
             if types.is_datetime64_dtype(df[col].dtypes):
                 value = row[col].isoformat()
-            elif types.is_string_dtype(col_py_type):
-                # truncate column if size is bigger than 200 chars.
-                value = row[col]
-                if len(value) > 60:
-                    value = value[:60] + ' (trunc.)'
-                    truncated.add(col)
             elif types.is_numeric_dtype(col_py_type):
                 if not types.is_integer_dtype(col_py_type):
                     value = round(row[col], 8)
@@ -310,9 +309,17 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
             elif types.is_datetime64_any_dtype(col_py_type): # list of dates
                 value = '[' + ','.join(['"{}'.format(d.isoformat()) 
                     for d in row[col]]) + ']'
-            elif isinstance(col, list):
+            elif isinstance(col_value, Sequence) and not isinstance(col_value, 
+                    (str, bytes, bytearray)):
                 value = '[' + ', '.join([str(x) if isinstance(x, number_types)
                                    else "'{}'".format(x) for x in row[col]]) + ']'
+                dtypes[x] = 'array'
+            elif types.is_string_dtype(col_py_type):
+                # truncate column if size is bigger than 200 chars.
+                value = row[col]
+                if len(value) > 60:
+                    value = value[:60] + ' (trunc.)'
+                    truncated.add(col)
             else:
                 value = json.dumps(row[col], cls=CustomEncoder)
 
@@ -321,7 +328,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
     
     result['attributes'] = [{'label': i, 'key': i, 
         'type': type_mappings.get(str(f), str(f))} 
-            for i, f in zip(df2.columns, df2.dtypes)]
+            for i, f in zip(df2.columns, dtypes)]
 
     result['rows'] = rows
     if describe:
@@ -357,7 +364,7 @@ def emit_sample_sklearn(task_id, df, emit_event, name, size=50, notebook=False,
         result['truncated'] = list(truncated)
 
     print('*' * 20)
-    print(df2.dtypes)
+    print(dtypes)
     print('*' * 20)
 
     emit_event('update task', status='COMPLETED',

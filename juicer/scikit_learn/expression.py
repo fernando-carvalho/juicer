@@ -6,6 +6,23 @@ import json
 from six import text_type
 from gettext import gettext
 
+JAVA_2_PYTHON_DATE_FORMAT = {
+    'yy': '%Y', 'y': '%y',
+    'yyyy': '%Y',
+    'MM': '%m', 'MMM': '%b', 'MMMM': '%B', 'M': '%-m',
+    'd': '%-d',
+    'dd': '%d',
+    'D': '%j',
+    'HH': '%H', 'h': '%I',
+    'mm': '%M',
+    'ss': '%S', 's': '%-S',
+    'S': '%s',
+    'EEE': '%a', 'EEEE': '%A',
+    'a': '%p',
+    'Z': '%Z',
+    "'": ''
+}
+ 
 
 class Expression:
     def __init__(self, json_code, params):
@@ -239,24 +256,38 @@ class Expression:
         spec['arguments'].insert(inx, arg)
         return spec
 
-    def get_to_timestamp_function(self, spec, params):
-        mapping = {
-            'yyyy': '%Y', 'yy': '%y',
-            'MM': '%m', 'MMM': '%b', 'MMMM': '%B',
-            'dd': '%d',
-            'HH': '%H', 'h': '%I',
-            'mm': '%M',
-            'ss': '%S',
-            'EEE': '%a', 'EEEE': '%A',
-            'a': '%p',
-            "'": ''
-        }
-        value = self.parse(spec['arguments'][0], params)
-        fmt = spec['arguments'][1]['value']  # no parsing
-        parts = re.split(r'(\W)', fmt)
-        py_fmt = ''.join([mapping.get(x, x) for x in parts])
+    def _get_python_date_format(self, fmt):
+        parts = re.split(r'(\W)', fmt.replace('$', ''))
+        return ''.join([JAVA_2_PYTHON_DATE_FORMAT.get(x, x) for x in parts])
 
+    def get_to_timestamp_function(self, spec, params):
+        # No parsing
+        py_fmt = self._get_python_date_format(spec['arguments'][1]['value'])
+        value = self.parse(spec['arguments'][0], params)
         return "datetime.datetime.strptime({}, '{}')".format(value, py_fmt)
+
+    def get_date_format_call(self, spec, params):
+        # No parsing
+        py_fmt = self._get_python_date_format(spec['arguments'][1]['value'])
+        value = self.parse(spec['arguments'][0], params)
+        return "{}.strftime('{}')".format(value, py_fmt)
+
+    def get_date_trunc_call(self, spec, params):
+        value = self.parse(spec['arguments'][0], params)
+        fmt = spec['arguments'][1]['value'].lower()
+        py_fmt = {
+                'hour': 'h', 'minute': 't', 'second': 's', 'day': 'd',
+        }.get(fmt)
+
+        if py_fmt:
+            return "{}.floor('{}')".format(value, py_fmt)
+        elif fmt == 'year':
+            return "{}.to_period('Y').to_timestamp()".format(value)
+        elif fmt == 'month':
+            return "{}.to_period('M').to_timestamp()".format(value)
+        elif fmt == 'week':
+            v = "{d} - pd.to_timedelta({d}.weekday(), unit='D').floor('D')"
+            return v.format(d=value)
 
     def get_substring_function_call(self, spec, params):
         args = spec['arguments']
@@ -591,8 +622,10 @@ class Expression:
             'current_date': lambda s, p: 'datetime.date.today()',
             'current_timestamp': lambda s, p: 'datetime.datetime.now()',
             # 'datediff': lambda s, p: '{}[::-1]'.format(self.parse(s['arguments'][0], p))
+            'date_format': self.get_date_format_call,
+            'date_trunc': self.get_date_trunc_call,
             'dayofmonth': lambda s, p: self.get_date_instance_attribute_call(s, p, 'day'),
-            'dayofweek': self.get_date_instance_attribute_call,
+            'dayofweek': lambda s, p: self.get_date_instance_attribute_call(s, p, 'weekday()'),
             'dayofyear': self.get_date_instance_attribute_call,
             'degrees': self.get_numpy_function_call,
             'instr': lambda s, p: self.get_function_call(s, p, 'str.find'),
@@ -692,7 +725,8 @@ class Expression:
                     if len(s['arguments']) > 1 else 'False'),
             # Split supports regex
             'split': lambda s, p:
-                ("functools.partial(lambda s, r: r.split(s),"
+                ("functools.partial(lambda s, r: "
+                 "[] if pd.isnull({txt}) else r.split(s),"
                  "r=re.compile(r{expr}))({txt})").format(
                     txt=self.parse(s['arguments'][0], p),
                     expr=self.parse(s['arguments'][1], p),
@@ -726,6 +760,9 @@ class Expression:
                 lambda s, p: self.get_function_call(s, p, 'pd.to_datetime'),
             'upper': lambda s, p: self.get_function_call(s, p, 'str.upper'),
 
-            'when': self.get_when_function
+            'weekofyear': lambda s, p: self.get_date_instance_attribute_call(s, p, 
+                    'isocalendar()[1]'),
+            'when': self.get_when_function,
+            'year': self.get_date_instance_attribute_call,
         }
         self.functions.update(others_functions)

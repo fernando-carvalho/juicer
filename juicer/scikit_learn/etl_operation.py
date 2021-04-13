@@ -5,7 +5,8 @@ from gettext import gettext
 from textwrap import dedent
 
 from juicer.operation import Operation
-from juicer.scikit_learn.expression import Expression
+from juicer.scikit_learn.expression import Expression, \
+        JAVA_2_PYTHON_DATE_FORMAT
 
 
 class AddColumnsOperation(Operation):
@@ -1302,7 +1303,7 @@ class CastOperation(Operation):
         {%- elif attr.type in ('Date', 'DateTime', 'Datetime', 'Time') -%}
             pd.to_datetime({{op.output}}['{{attr.attribute}}'], 
                            errors='{{op.errors}}',
-                           format='{{op.format}}')
+                               format='{{attr.formats}}')
         {%- elif attr.type == 'Text' -%}
             {{op.output}}['{{attr.attribute}}'].astype(str)
         {%-endif %}
@@ -1325,6 +1326,9 @@ class CastOperation(Operation):
         if self.has_code:
             if self.ATTRIBUTES_PARAM in parameters:
                 self.attributes = parameters[self.ATTRIBUTES_PARAM]
+                for attr in self.attributes:
+                    if 'formats' in attr:
+                        attr['formats'] = self.parse_date_format(attr['formats'])
             else:
                 raise ValueError(
                     _("Parameter '{}' must be informed for task {}").format
@@ -1333,6 +1337,12 @@ class CastOperation(Operation):
     @property
     def get_data_out_names(self, sep=','):
         return self.output
+
+    def parse_date_format(self, fmt):
+        parts = re.split('([^\w\d"\'])', fmt)
+        py_fmt = ''.join([JAVA_2_PYTHON_DATE_FORMAT.get(x, x)
+            for x in parts])
+        return py_fmt
 
     def generate_code(self):
         if self.has_code:
