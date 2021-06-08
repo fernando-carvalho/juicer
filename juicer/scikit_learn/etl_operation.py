@@ -964,8 +964,6 @@ class SelectOperation(Operation):
         if self.EXCLUDE_PARAM in parameters:
             self.exclude = parameters.get(self.EXCLUDE_PARAM)
 
-        # Rename is a list of list, where first element of inner list is 
-        # the original name and second is new name
         if self.RENAME_PARAM in parameters:
             self.rename = parameters.get(self.RENAME_PARAM)
 
@@ -988,10 +986,11 @@ class SelectOperation(Operation):
                            input=self.named_inputs['input data'])
             elif self.rename:
                 code = """
-                to_rename = [{to_rename}]
+                to_rename = {to_rename}
                 {output} = {input}.rename(columns=dict(to_rename))
                 """.format(output=self.output, 
-                           to_rename=repr(self.rename),
+                           to_rename=repr(
+                                list(zip(self.attributes, self.rename))),
                            input=self.named_inputs['input data'])
             else:
                 code = "{output} = {input}[[{column}]]" \
