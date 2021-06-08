@@ -81,7 +81,7 @@ pandasql==0.7.3
 pathlib2==2.3.4
 pbr==5.4.2
 pep8==1.7.1
-Pillow==7.1.2
+Pillow==8.2.0
 pluggy==0.13.1
 ply==3.11
 prefixspan==0.5.2
