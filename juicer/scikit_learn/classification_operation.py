@@ -346,7 +346,7 @@ class GBTClassifierOperation(Operation):
     FEATURES_PARAM = 'features'
 
     LOSS_PARAM_DEV = 'deviance'
-    LOSS_PARAM_EXP = 'exponencial'
+    LOSS_PARAM_EXP = 'exponential'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         Operation.__init__(self, parameters, named_inputs, named_outputs)

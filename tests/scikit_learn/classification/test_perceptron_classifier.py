@@ -12,638 +12,127 @@ import numpy as np
 # pd.set_option('display.max_columns', None)
 # pd.set_option('display.max_colwidth', None)
 
+@pytest.fixture
+def get_columns():
+    return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth']
+
+
+@pytest.fixture
+def get_df(get_columns):
+    return pd.DataFrame(util.iris(get_columns))
+
+
+@pytest.fixture
+def get_arguments(get_columns):
+    return {
+        'parameters': {'features': get_columns,
+                       'multiplicity': {'train input data': 0},
+                       'label': [get_columns[0]]},
+        'named_inputs': {
+            'train input data': 'df',
+        },
+        'named_outputs': {
+            'output data': 'out'
+        }
+    }
+
+
 # PerceptronClassifier
 #
 #
 # # # # # # # # # # Success # # # # # # # # # #
-def test_perceptron_classifier_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+
+@pytest.mark.parametrize(("operation_par", "algorithm_par"), [
+    ({}, {}),
+    ({'alpha': 0.0002}, {'alpha': 0.0002}),
+    ({'tol': 0.002}, {'tol': 0.002}),
+    ({"seed": 1, "shuffle": 1}, {"random_state": 1, "shuffle": True}),
+    ({"penalty": "l1"}, {"penalty": "l1"}),
+    ({"max_iter": 1002}, {"max_iter": 1002}),
+    ({'fit_intercept': 2}, {'fit_intercept': 2}),
+    ({'eta0': 2.0}, {'eta0': 2.0}),
+    ({'n_jobs': -1}, {'n_jobs': -1}),
+    ({"seed": 1, 'early_stopping': 1},
+     {"random_state": 1, 'early_stopping': True}),
+    ({'validation_fraction': 0.2}, {'validation_fraction': 0.2}),
+    ({'n_iter_no_change': 6}, {'n_iter_no_change': 6}),
+    ({'class_weight': "'balanced'"}, {'class_weight': "balanced"})
+], ids=["default_params", "alpha_param", "tol_param", "seed_and_shuffle_params",
+        "penalty_param", "max_iter_param", "fit_intercept_param", "eta0_param",
+        "n_jobs_param", "early_stopping_param", "validation_fraction_param",
+        "n_iter_no_change_param", "class_Weight_param"])
+def test_perceptron_classifier_params_success(get_arguments, get_df, get_columns,
+                                              algorithm_par, operation_par):
+    df = get_df.copy().astype(np.int64())
+    test_df = get_df.copy().astype(np.int64())
+    arguments = get_arguments
+
+    arguments['parameters'].update(operation_par)
+
     util.add_minimum_ml_args(arguments)
     instance = PerceptronClassifierModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance),
                           {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
+    x_train = get_X_train_data(test_df, get_columns)
+    y = get_label_data(test_df, [get_columns[0]])
     y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
+    model_1 = Perceptron(tol=0.001, alpha=0.0001,
+                         max_iter=1000, shuffle=False, random_state=None,
+                         penalty='None', fit_intercept=1,
                          eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_alpha_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'alpha': 0.1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.1, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_tol_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'tol': 0.1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.1, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_shuffle_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'shuffle': 1,
-                       'seed': 1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=True,
-                         random_state=1, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_seed_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'seed': 2002},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=2002, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_penalty_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'penalty': 'l1'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='l1', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_max_iter_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'max_iter': 500},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=500, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_fit_intercept_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'fit_intercept': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=2,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_eta0_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'eta0': 2.0},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=2.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_n_jobs_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'n_jobs': 1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=1, early_stopping=False,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_early_stopping_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=50)
-    for idx in df.index:
-        for col in df.columns:
-            df.loc[idx, col] = int(df.loc[idx, col])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'early_stopping': 1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=True,
-                         n_iter_no_change=5, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_validation_fraction_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=42)
-    for idx in df.index:
-        for col in df.columns:
-            df.loc[idx, col] = int(df.loc[idx, col])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'early_stopping': 1,
-                       'validation_fraction': 0.5,
-                       'seed': 1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=1, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=True,
-                         validation_fraction=0.5, n_iter_no_change=5,
+                         validation_fraction=0.1,
+                         n_iter_no_change=5,
                          class_weight=None, warm_start=False)
+
+    for key, value in algorithm_par.items():
+        setattr(model_1, key, value)
+
     model_1.fit(x_train, y)
     test_df['prediction'] = model_1.predict(x_train).tolist()
     assert result['out'].equals(test_df)
     assert str(result['model_task_1']) == str(model_1)
 
 
-def test_perceptron_classifier_n_iter_no_change_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'n_iter_no_change': 10},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_perceptron_classifier_prediction_param_success(get_df, get_columns,
+                                                        get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'prediction': 'success'})
     util.add_minimum_ml_args(arguments)
     instance = PerceptronClassifierModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=10, class_weight=None,
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
+                          {'df': get_df.astype(np.int64())})
+    assert result['out'].columns[4] == 'success'
 
 
-def test_perceptron_classifier_class_weight_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'class_weight': "'balanced'"},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    x_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-    y = np.reshape(y, len(y))
-    model_1 = Perceptron(tol=0.001, alpha=0.0001, max_iter=1000, shuffle=False,
-                         random_state=None, penalty='None', fit_intercept=1,
-                         eta0=1.0, n_jobs=None, early_stopping=False,
-                         n_iter_no_change=5, class_weight='balanced',
-                         warm_start=False)
-    model_1.fit(x_train, y)
-    test_df['prediction'] = model_1.predict(x_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_perceptron_classifier_prediction_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'prediction': 'success'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    assert result['out'].columns[2] == 'success'
-
-
-def test_perceptron_classifier_no_output_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = PerceptronClassifierModelOperation(**arguments)
-    assert instance.generate_code() is None
-
-
-def test_perceptron_classifier_missing_input_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+@pytest.mark.parametrize(("selector", "drop"), [
+    ("named_outputs", "output data"),
+    ("named_inputs", "train input data")
+], ids=["missing_output", "missing_input"])
+def test_perceptron_classifier_no_code_success(selector, drop, get_arguments):
+    arguments = get_arguments
+    arguments[selector].pop(drop)
     util.add_minimum_ml_args(arguments)
     instance = PerceptronClassifierModelOperation(**arguments)
     assert instance.generate_code() is None
 
 
 # # # # # # # # # # Fail # # # # # # # # # #
-def test_perceptron_classifier_invalid_max_iter_and_alpha_params_fail():
-    vals = [
-        'max_iter',
-        'alpha'
-    ]
-
-    for par in vals:
-        arguments = {
-            'parameters': {'features': ['sepallength', 'sepalwidth'],
-                           'multiplicity': {'train input data': 0},
-                           'label': ['sepalwidth'],
-                           par: -1},
-            'named_inputs': {
-                'train input data': 'df',
-            },
-            'named_outputs': {
-                'output data': 'out'
-            }
-        }
-        util.add_minimum_ml_args(arguments)
-        with pytest.raises(ValueError) as val_err:
-            PerceptronClassifierModelOperation(**arguments)
-        assert f"Parameter '{par}' must be x>0 for task" \
-               f" {PerceptronClassifierOperation}" in str(val_err.value)
+@pytest.mark.parametrize('par', ['max_iter', 'alpha'])
+def test_perceptron_classifier_invalid_params_fail(par,
+                                                   get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
+    util.add_minimum_ml_args(arguments)
+    with pytest.raises(ValueError) as val_err:
+        PerceptronClassifierModelOperation(**arguments)
+    assert f"Parameter '{par}' must be x>0 for task" \
+           f" {PerceptronClassifierOperation}" in str(val_err.value)
 
 
-def test_perceptron_classifier_invalid_validation_fraction_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'validation_fraction': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_perceptron_classifier_invalid_validation_fraction_param_fail(
+        get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'validation_fraction': -1})
     util.add_minimum_ml_args(arguments)
     with pytest.raises(ValueError) as val_err:
         PerceptronClassifierModelOperation(**arguments)

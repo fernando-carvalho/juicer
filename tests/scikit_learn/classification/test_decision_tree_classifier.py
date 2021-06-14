@@ -1,11 +1,36 @@
-from tests.scikit_learn import util
-from juicer.scikit_learn.classification_operation import \
-    DecisionTreeClassifierOperation, DecisionTreeClassifierModelOperation
-from sklearn.tree import DecisionTreeClassifier
-from tests.scikit_learn.util import get_label_data, get_X_train_data
 import numpy as np
 import pytest
-import pandas as pd
+from sklearn.tree import DecisionTreeClassifier
+
+from juicer.scikit_learn.classification_operation import \
+    DecisionTreeClassifierOperation, DecisionTreeClassifierModelOperation
+from tests.scikit_learn import util
+from tests.scikit_learn.util import get_label_data, get_X_train_data
+
+
+@pytest.fixture
+def get_columns():
+    return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth']
+
+
+@pytest.fixture
+def get_df(get_columns):
+    return util.iris(get_columns)
+
+
+@pytest.fixture
+def get_arguments(get_columns):
+    return {
+        'parameters': {'features': get_columns,
+                       'multiplicity': {'train input data': 0},
+                       'label': [get_columns[0]]},
+        'named_inputs': {
+            'train input data': 'df',
+        },
+        'named_outputs': {
+            'output data': 'out'
+        }
+    }
 
 
 # pd.set_option('display.max_rows', None)
@@ -16,32 +41,51 @@ import pandas as pd
 #
 #
 # # # # # # # # # # Success # # # # # # # # # #
-def test_decision_tree_classifier_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]],
-        columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+@pytest.mark.parametrize(("operation_par", "algorithm_par"), [
+    ({}, {}),
+
+    ({'max_depth': 2}, {'max_depth': 2}),
+
+    ({'min_samples_split': 3}, {'min_samples_split': 3}),
+
+    ({'min_samples_leaf': 2}, {'min_samples_leaf': 2}),
+
+    ({'min_weight': 0.1}, {'min_weight_fraction_leaf': 0.1}),
+
+    ({'random_state': 2002}, {'random_state': 2002}),
+
+    ({'criterion': 'entropy'}, {'criterion': 'entropy'}),
+
+    ({'splitter': 'random'}, {'splitter': 'random'}),
+
+    ({'max_features': 2}, {'max_features': 2}),
+
+    ({'max_leaf_nodes': 5}, {'max_leaf_nodes': 5}),
+
+    ({'min_impurity_decrease': 0.5}, {'min_impurity_decrease': 0.5}),
+
+    ({'class_weight': '"balanced"'}, {'class_weight': "balanced"})
+
+], ids=["default_params", "max_depth_param", "min_samples_split_param",
+        "min_samples_leaf_param", "min_weight_param", "random_state_param",
+        "criterion_param", "splitter_param", "max_features_param",
+        "max_leaf_nodes_param", "min_impurity_decrease_param",
+        "class_weight_param"])
+def test_decision_tree_classifier_params_success(get_arguments, get_df,
+                                                 get_columns,
+                                                 operation_par, algorithm_par):
+    df = get_df.copy().astype(np.int64())
+    test_df = get_df.copy().astype(np.int64())
+    arguments = get_arguments
+
+    arguments['parameters'].update(operation_par)
+
     util.add_minimum_ml_args(arguments)
     instance = DecisionTreeClassifierModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance),
                           {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
+    x_train = get_X_train_data(test_df, get_columns)
+    y = get_label_data(test_df, [get_columns[0]])
     y = np.reshape(y, len(y))
     model_1 = DecisionTreeClassifier(max_depth=None,
                                      min_samples_split=2,
@@ -52,616 +96,59 @@ def test_decision_tree_classifier_success():
                                      max_leaf_nodes=None,
                                      min_impurity_decrease=0.0,
                                      class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
+
+    for key, value in algorithm_par.items():
+        setattr(model_1, key, value)
+
+    model_1.fit(x_train, y)
+    test_df['prediction'] = model_1.predict(x_train).tolist()
     assert result['out'].equals(test_df)
     assert str(result['model_task_1']) == str(model_1)
 
 
-def test_decision_tree_classifier_max_depth_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
+def test_decision_tree_classifier_prediction_param_success(get_columns,
+                                                           get_arguments,
+                                                           get_df):
+    arguments = get_arguments
 
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_depth': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+    arguments['parameters'].update({"prediction": "success"})
+
     util.add_minimum_ml_args(arguments)
     instance = DecisionTreeClassifierModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=2,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
+                          {'df': get_df.astype(np.int64())})
+    assert result['out'].columns[4] == 'success'
 
 
-def test_decision_tree_classifier_min_samples_split_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_samples_split': 5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=5,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_min_samples_leaf_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_samples_leaf': 3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=3,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_min_weight_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_weight': 0.5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.5,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_random_state_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'random_state': 2002},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=2002, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_criterion_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'criterion': 'entropy'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='entropy',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_splitter_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'splitter': 'random'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='random', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_max_features_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_features': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=2,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_max_leafs_nodes_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_leaf_nodes': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=2,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_min_impurity_decrease_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_impurity_decrease': 2.0},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=2.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_class_weight_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'class_weight': '"balanced"'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight="balanced")
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_presort_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    test_df = df.copy()
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'presort': True},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-    y = np.reshape(y, len(y))
-    model_1 = DecisionTreeClassifier(max_depth=None,
-                                     min_samples_split=2,
-                                     min_samples_leaf=1,
-                                     min_weight_fraction_leaf=0.0,
-                                     random_state=None, criterion='gini',
-                                     splitter='best', max_features=None,
-                                     max_leaf_nodes=None,
-                                     min_impurity_decrease=0.0,
-                                     class_weight=None)
-    model_1.fit(X_train, y)
-    test_df['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_df)
-    assert str(result['model_task_1']) == str(model_1)
-
-
-def test_decision_tree_classifier_prediction_param_success():
-    df = pd.DataFrame(
-        [[0, 1], [1, 2],
-         [2, 3], [3, 4],
-         [4, 5], [5, 6],
-         [6, 7], [7, 8],
-         [8, 9], [9, 10]], columns=['sepallength', 'sepalwidth'])
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'prediction': 'success'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    assert result['out'].columns[2] == 'success'
-
-
-def test_decision_tree_classifier_no_output_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-        }
-    }
+@pytest.mark.parametrize(("selector", "drop"), [
+    ("named_outputs", "output data"),
+    ("named_inputs", "train input data")
+], ids=["missing_outputs", "missing_inputs"])
+def test_decision_tree_classifier_no_code_success(get_arguments, selector, drop):
+    arguments = get_arguments
+    arguments[selector].pop(drop)
     util.add_minimum_ml_args(arguments)
     instance = DecisionTreeClassifierModelOperation(**arguments)
     assert instance.generate_code() is None
 
 
-def test_decision_tree_classifier_missing_input_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    instance = DecisionTreeClassifierModelOperation(**arguments)
-    assert instance.generate_code() is None
-
-
+@pytest.mark.parametrize("par", ["min_samples_split", "min_samples_leaf",
+                                 "max_depth"])
 # # # # # # # # # # Fail # # # # # # # # # #
-def test_decision_tree_classifier_invalid_min_samples_split_leaf_params_fail():
-    pars = ['min_samples_split',
-            'min_samples_leaf']
-    for val in pars:
-        arguments = {
-            'parameters': {'features': ['sepallength', 'sepalwidth'],
-                           'multiplicity': {'train input data': 0},
-                           'label': ['sepallength'],
-                           val: -1},
-            'named_inputs': {
-                'train input data': 'df',
-            },
-            'named_outputs': {
-                'output data': 'out'
-            }
-        }
-        util.add_minimum_ml_args(arguments)
-        with pytest.raises(ValueError) as val_err:
-            DecisionTreeClassifierModelOperation(**arguments)
-        assert f"Parameter '{val}' must be x>0 for task" \
-               f" {DecisionTreeClassifierOperation}" in str(val_err)
+def test_decision_tree_classifier_invalid_params_fail(
+        par, get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
+    util.add_minimum_ml_args(arguments)
+    with pytest.raises(ValueError) as val_err:
+        DecisionTreeClassifierModelOperation(**arguments)
+    assert f"Parameter '{par}' must be x>0 for task" \
+           f" {DecisionTreeClassifierOperation}" in str(val_err)
 
 
-def test_decision_tree_classifier_invalid_min_weight_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_weight': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_decision_tree_classifier_invalid_min_weight_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'min_weight': -1})
     util.add_minimum_ml_args(arguments)
     with pytest.raises(ValueError) as val_err:
         DecisionTreeClassifierModelOperation(**arguments)
@@ -669,59 +156,10 @@ def test_decision_tree_classifier_invalid_min_weight_param_fail():
            f" {DecisionTreeClassifierOperation}" in str(val_err)
 
 
-def test_decision_tree_classifier_invalid_max_depth_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_depth': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    with pytest.raises(ValueError) as val_err:
-        DecisionTreeClassifierModelOperation(**arguments)
-    assert f"Parameter 'max_depth' must be x>0 for task " \
-           f"{DecisionTreeClassifierOperation}" in str(val_err)
-
-
-def test_decision_tree_classifier_min_samples_split_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_samples_split': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    util.add_minimum_ml_args(arguments)
-    with pytest.raises(ValueError) as val_err:
-        DecisionTreeClassifierModelOperation(**arguments)
-    assert f"Parameter 'min_samples_split' must be x>0 for task " \
-           f"{DecisionTreeClassifierOperation}" in str(val_err)
-
-
-def test_decision_tree_classifier_min_impurity_decrease_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'min_impurity_decrease': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_decision_tree_classifier_min_impurity_decrease_param_fail(
+        get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'min_impurity_decrease': -1})
     util.add_minimum_ml_args(arguments)
     with pytest.raises(ValueError) as val_err:
         DecisionTreeClassifierModelOperation(**arguments)
