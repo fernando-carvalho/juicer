@@ -1,41 +1,83 @@
-from tests.scikit_learn import util
-from juicer.scikit_learn.regression_operation import \
-    RandomForestRegressorOperation
-from sklearn.ensemble import RandomForestRegressor
-from tests.scikit_learn.util import get_X_train_data, get_label_data
+import numpy as np
 import pytest
-import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+
+from juicer.scikit_learn.regression_operation import \
+    RandomForestRegressorModelOperation, RandomForestRegressorOperation
+from tests.scikit_learn import util
+from tests.scikit_learn.util import get_X_train_data, get_label_data
+
 
 # pd.set_option('display.max_rows', None)
 # pd.set_option('display.max_columns', None)
 # pd.set_option('display.max_colwidth', None)
 
 
+@pytest.fixture
+def get_columns():
+    return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth']
+
+
+@pytest.fixture
+def get_df(get_columns):
+    return util.iris(get_columns)
+
+
+@pytest.fixture
+def get_arguments(get_columns):
+    return {
+        'parameters': {'features': get_columns,
+                       'label': [get_columns[0]],
+                       'multiplicity': {'train input data': 0}},
+        'named_inputs': {
+            'train input data': 'df',
+        },
+        'named_outputs': {
+            'output data': 'out'
+        }
+    }
+
+
 # RandomForestRegressor:
 #
 #
 # # # # # # # # # # Success # # # # # # # # # #
-def test_random_forest_regressor_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
+@pytest.mark.parametrize(("operation_par", "algorithm_par"), [
+    ({}, {}),
+    ({'n_estimators': 200}, {'n_estimators': 200}),
+    ({'max_features': 'sqrt'}, {'max_features': 'sqrt'}),
+    ({'max_depth': 5}, {'max_depth': 5}),
+    ({'min_samples_split': 6}, {'min_samples_split': 6}),
+    ({'min_samples_leaf': 8}, {'min_samples_leaf': 8}),
+    ({'criterion': 'mae'}, {'criterion': 'mae'}),
+    ({'min_weight_fraction_leaf': 0.5}, {'min_weight_fraction_leaf': 0.5}),
+    ({'max_leaf_nodes': 5}, {'max_leaf_nodes': 5}),
+    ({'min_impurity_decrease': 0.5}, {'min_impurity_decrease': 0.5}),
 
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
+    ({'bootstrap': False, 'oob_score': False},
+     {'bootstrap': False, 'oob_score': False}),
+
+    ({'n_jobs': 3}, {'n_jobs': 3}),
+    ({'random_state': 2002}, {'random_state': 2002})
+
+], ids=["default_params", 'n_estimators_param', 'max_features_param',
+        'max_depth_param', 'min_samples_split_param', 'min_samples_leaf_param',
+        'criterion_param', 'min_weight_fraction_leaf_param',
+        'max_leaf_nodes_params', 'min_impurity_decrease_params',
+        'bootstrap_and_oob_score_params', 'n_jobs_param', 'random_state_param'])
+def test_random_forest_regressor_success(get_arguments, get_columns, get_df,
+                                         operation_par, algorithm_par):
+    df = get_df.copy()
+    test_df = get_df.copy()
+    arguments = get_arguments
+    arguments['parameters'].update(operation_par)
+
+    util.add_minimum_ml_args(arguments)
+    instance = RandomForestRegressorModelOperation(**arguments)
 
     result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
+    x_train = get_X_train_data(test_df, get_columns)
+    y = get_label_data(test_df, [get_columns[0]])
 
     model_1 = RandomForestRegressor(
         n_estimators=100,
@@ -51,746 +93,95 @@ def test_random_forest_regressor_success():
         bootstrap=True,
         oob_score=True, verbose=0, warm_start=False
     )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
+
+    for key, value in algorithm_par.items():
+        setattr(model_1, key, value)
+
+    model_1.fit(x_train, y)
+    test_df['prediction'] = model_1.predict(x_train).tolist()
+
+    assert np.allclose(result['out'], test_df, atol=1)
+    assert str(result['regressor_model']) == str(model_1)
 
 
-def test_random_forest_regressor_n_estimators_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'n_estimators': 200},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
+def test_random_forest_regressor_prediction_param_success(get_arguments,
+                                                          get_df):
+    df = get_df.copy()
+    arguments = get_arguments
+    arguments['parameters'].update({'prediction': 'success'})
+    util.add_minimum_ml_args(arguments)
+    instance = RandomForestRegressorModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=200,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
+    assert result['out'].columns[4] == 'success'
 
 
-def test_random_forest_regressor_max_features_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'max_features': 'sqrt'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='sqrt',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_max_depth_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'max_depth': 5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=5,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_min_samples_split_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_samples_split': 6},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=6,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_min_samples_leaf_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_samples_leaf': 8},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=8,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_criterion_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'criterion': 'mae'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mae',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_min_weight_fraction_leaf_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_weight_fraction_leaf': 0.5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.5,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_max_leaf_nodes_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'max_leaf_nodes': 5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=5,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_min_impurity_decrease_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_impurity_decrease': 0.5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.5,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_bootstrap_and_oob_score_params_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'bootstrap': False,
-                       'oob_score': False},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=False,
-        oob_score=False, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_n_jobs_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'n_jobs': 3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=3, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_random_state_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'random_state': 2002},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=2002,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=0, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_random_forest_regressor_verbose_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'verbose': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepalwidth'])
-
-    model_1 = RandomForestRegressor(
-        n_estimators=100,
-        max_features='auto',
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        random_state=None,
-        n_jobs=1, criterion='mse',
-        min_weight_fraction_leaf=0.0,
-        max_leaf_nodes=None,
-        min_impurity_decrease=0.0,
-        bootstrap=True,
-        oob_score=True, verbose=2, warm_start=False
-    )
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_random_forest_regressor_prediction_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'prediction': 'success'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    assert result['out'].columns[2] == 'success'
-
-
-def test_random_forest_regressor_no_output_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
-    assert instance.generate_code() is None
-
-
-def test_random_forest_regressor_missing_input_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth']},
-        'named_inputs': {
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = RandomForestRegressorOperation(**arguments)
+@pytest.mark.parametrize(('selector', 'drop'), [
+    ("named_outputs", "output data"),
+    ('named_inputs', 'train input data')
+], ids=["missing_output", "missing_input"])
+def test_random_forest_regressor_no_code_success(get_arguments, selector, drop):
+    arguments = get_arguments
+    arguments[selector].pop(drop)
+    util.add_minimum_ml_args(arguments)
+    instance = RandomForestRegressorModelOperation(**arguments)
     assert instance.generate_code() is None
 
 
 # # # # # # # # # # Fail # # # # # # # # # #
-def test_random_forest_regressor_multiple_params_fail():
-    params = ['n_estimators', 'min_samples_split',
-              'min_samples_leaf']
-    for val in params:
-        arguments = {
-            'parameters': {'features': ['sepallength', 'sepalwidth'],
-                           'multiplicity': {'train input data': 0},
-                           'label': ['sepalwidth'],
-                           val: -1},
-            'named_inputs': {
-                'train input data': 'df',
-            },
-            'named_outputs': {
-                'output data': 'out'
-            }
-        }
-        with pytest.raises(ValueError) as val_err:
-            RandomForestRegressorOperation(**arguments)
-        assert f"Parameter '{val}' must be x>0 for task" in str(
-            val_err.value)
-
-
-def test_random_forest_regressor_invalid_n_jobs_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'n_jobs': -3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+@pytest.mark.parametrize('par', ['n_estimators', 'min_samples_split',
+                                 'min_samples_leaf'])
+def test_random_forest_regressor_multiple_params_fail(par, get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
     with pytest.raises(ValueError) as val_err:
-        RandomForestRegressorOperation(**arguments)
-    assert "Parameter 'n_jobs' must be x >= -1 for task" in str(val_err.value)
+        RandomForestRegressorModelOperation(**arguments)
+    assert f"Parameter '{par}' must be x>0 for task" \
+           f" {RandomForestRegressorOperation}" in str(val_err.value)
 
 
-def test_random_forest_regressor_invalid_max_depth_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'max_depth': -5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_random_forest_regressor_invalid_n_jobs_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'n_jobs': -3})
     with pytest.raises(ValueError) as val_err:
-        RandomForestRegressorOperation(**arguments)
-    assert "Parameter 'max_depth' must be x>0 or None for task" in str(
-        val_err.value)
+        RandomForestRegressorModelOperation(**arguments)
+    assert f"Parameter 'n_jobs' must be x >= -1 for task" \
+           f" {RandomForestRegressorOperation}" in str(val_err.value)
 
 
-def test_random_forest_regressor_invalid_random_state_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'random_state': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_random_forest_regressor_invalid_max_depth_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'max_depth': -5})
     with pytest.raises(ValueError) as val_err:
-        RandomForestRegressorOperation(**arguments)
-    assert "Parameter 'random_state' must be x>=0 or None for task" in str(
-        val_err.value)
+        RandomForestRegressorModelOperation(**arguments)
+    assert f"Parameter 'max_depth' must be x>0 or None for task" \
+           f" {RandomForestRegressorOperation}" in str(val_err.value)
 
 
-def test_random_forest_regressor_invalid_min_weight_fraction_leaf_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_weight_fraction_leaf': 5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_random_forest_regressor_invalid_random_state_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'random_state': -1})
     with pytest.raises(ValueError) as val_err:
-        RandomForestRegressorOperation(**arguments)
+        RandomForestRegressorModelOperation(**arguments)
+    assert f"Parameter 'random_state' must be x>=0 or None for task" \
+           f" {RandomForestRegressorOperation}" in str(val_err.value)
+
+
+def test_random_forest_regressor_invalid_min_weight_fraction_leaf_param_fail(
+        get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'min_weight_fraction_leaf': 5})
+    with pytest.raises(ValueError) as val_err:
+        RandomForestRegressorModelOperation(**arguments)
     assert "Parameter 'min_weight_fraction_leaf' must be x >= 0 and x" \
-           " <= 0.5 for task" in str(val_err.value)
+           f" <= 0.5 for task {RandomForestRegressorOperation}" in str(
+        val_err.value)
 
 
-def test_random_forest_regressor_invalid_min_impurity_decrease_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepalwidth'],
-                       'min_impurity_decrease': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_random_forest_regressor_invalid_min_impurity_decrease_param_fail(
+        get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'min_impurity_decrease': -1})
     with pytest.raises(ValueError) as val_err:
-        RandomForestRegressorOperation(**arguments)
+        RandomForestRegressorModelOperation(**arguments)
     assert "Parameter 'min_impurity_decrease' must be x>=0 or None for task" \
-           in str(val_err.value)
-
+           f" {RandomForestRegressorOperation}" in str(val_err.value)

@@ -1,881 +1,162 @@
-from tests.scikit_learn import util
-from juicer.scikit_learn.regression_operation import SGDRegressorOperation
+import numpy as np
 import pytest
-import pandas as pd
 from sklearn.linear_model import SGDRegressor
+
+from juicer.scikit_learn.regression_operation import SGDRegressorModelOperation, \
+    SGDRegressorOperation
+from tests.scikit_learn import util
 from tests.scikit_learn.util import get_X_train_data, get_label_data
+
 
 # pd.set_option('display.max_rows', None)
 # pd.set_option('display.max_columns', None)
 # pd.set_option('display.max_colwidth', None)
 
 
+@pytest.fixture
+def get_columns():
+    return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth']
+
+
+@pytest.fixture
+def get_df(get_columns):
+    return util.iris(get_columns)
+
+
+@pytest.fixture
+def get_arguments(get_columns):
+    return {
+        'parameters': {'features': get_columns,
+                       'label': [get_columns[0]],
+                       'multiplicity': {'train input data': 0}},
+        'named_inputs': {
+            'train input data': 'df',
+        },
+        'named_outputs': {
+            'output data': 'out'
+        }
+    }
+
+
 # SGDRegressor:
 #
 #
 # # # # # # # # # # Success # # # # # # # # # #
-def test_sgd_regressor_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
+@pytest.mark.parametrize(("operation_par", "algorithm_par"), [
+    ({}, {}),
+    ({'alpha': 0.1}, {'alpha': 0.1}),
+    ({'l1_ratio': 0.3}, {'l1_ratio': 0.3}),
+    ({'max_iter': 500}, {'max_iter': 500}),
+    ({'tol': 0.1}, {'tol': 0.1}),
+    ({'random_state': 2002}, {'random_state': 2002}),
+    ({'power_t': 0.1}, {'power_t': 0.1}),
 
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0}},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
+    ({'loss': 'epsilon_insensitive', 'epsilon': 0.2},
+     {'loss': 'epsilon_insensitive', 'epsilon': 0.2}),
 
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
+    ({'n_iter_no_change': 2}, {'n_iter_no_change': 2}),
 
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
+    ({'penalty': 'l1'}, {'penalty': 'l1'}),
+
+    ({'fit_intercept': 3}, {'fit_intercept': 3}),
+
+    ({'average': 0}, {'average': 0}),
+
+    ({'shuffle': 0}, {'shuffle': False}),
+
+    ({'eta0': 0.02, 'learning_rate': 'adaptive'},
+     {'eta0': 0.02, 'learning_rate': 'adaptive'}),
+
+    ({'early_stopping': 1, 'validation_fraction': 0.3},
+     {'early_stopping': True, 'validation_fraction': 0.3})
+
+], ids=["default_params", "alpha_param", 'l1_ratio_param', 'max_iter_param',
+        'tol_param', 'random_state_param', 'power_t_param',
+        "loss_and_epsilon_param", 'n_iter_no_change_param', 'penalty_param',
+        'fit_intercept_param', 'average_param', 'shuffle_param',
+        'eta_0_and_learning_rate_param',
+        'early_stopping_and_validation_fraction_params'])
+def test_sgd_regressor_params_success(get_arguments, get_df, get_columns,
+                                      operation_par, algorithm_par):
+    df = get_df.copy()
+    test_df = get_df.copy()
+    arguments = get_arguments
+
+    arguments['parameters'].update(operation_par)
+
+    util.add_minimum_ml_args(arguments)
+    instance = SGDRegressorModelOperation(**arguments)
+    result = util.execute(util.get_complete_code(instance),
+                          {'df': df})
+
+    x_train = get_X_train_data(test_df, get_columns)
+    y = get_label_data(test_df, [get_columns[0]])
+
+    model_1 = SGDRegressor(loss='squared_loss', power_t=0.5,
+                           tol=0.001, early_stopping=False,
+                           n_iter_no_change=5, penalty='l2',
+                           fit_intercept=1, average=1,
                            learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
+                           shuffle=True, alpha=0.0001,
+                           l1_ratio=0.15, max_iter=1000,
+                           random_state=None, eta0=0.01)
+
+    for key, value in algorithm_par.items():
+        setattr(model_1, key, value)
+
+    model_1.fit(x_train, y)
+    test_df['prediction'] = model_1.predict(x_train).tolist()
+    assert np.allclose(result['out'], test_df, atol=1)
+    assert str(result['algorithm']) == str(model_1)
 
 
-def test_sgd_regressor_alpha_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'alpha': 0.1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
+def test_sgd_regressor_prediction_param_success(get_df, get_arguments):
+    df = get_df.copy()
+    arguments = get_arguments
+    arguments['parameters'].update({'prediction': 'success'})
+    util.add_minimum_ml_args(arguments)
+    instance = SGDRegressorModelOperation(**arguments)
     result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.1,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_l1_ratio_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'l1_ratio': 0.3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.3,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_max_iter_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'max_iter': 500},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=500,
-                           random_state=None,
-                           eta0=0.1)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_tol_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'tol': 0.1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01,
-                           tol=0.1)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_random_state_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'random_state': 2002},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=2002,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_sgd_regressor_prediction_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'prediction': 'success'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-    assert result['out'].columns[2] == 'success'
-
-
-def test_sgd_regressor_power_t_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'power_t': 0.1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.1,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_early_stopping_and_validation_fraction_params_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'early_stopping': 1,
-                       'validation_fraction': 0.3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=True,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01,
-                           validation_fraction=0.3)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_loss_and_epsilon_params_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'loss': 'epsilon_insensitive',
-                       'epsilon': 0.2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='epsilon_insensitive',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01,
-                           epsilon=0.2)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_n_iter_no_change_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'n_iter_no_change': 2},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=2,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.1)
-
-
-def test_sgd_regressor_penalty_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'penalty': 'l1'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l1',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_fit_intercept_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'fit_intercept': 3},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=3,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_eta0_and_learning_rate_params_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'eta0': 0.1,
-                       'learning_rate': 'constant'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='constant',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.1)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 3.0e+11, 3.0e-11)
-
-
-def test_sgd_regressor_verbose_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'verbose': 1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=1,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_average_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'average': 0},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=0,
-                           learning_rate='invscaling',
-                           shuffle=True,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 0.01)
-
-
-def test_sgd_regressor_shuffle_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'shuffle': 0},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance), {'df': df})
-
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = SGDRegressor(loss='squared_loss',
-                           power_t=0.5,
-                           early_stopping=False,
-                           n_iter_no_change=5,
-                           penalty='l2',
-                           fit_intercept=1,
-                           verbose=0,
-                           average=1,
-                           learning_rate='invscaling',
-                           shuffle=False,
-                           alpha=0.0001,
-                           l1_ratio=0.15,
-                           max_iter=1000,
-                           random_state=None,
-                           eta0=0.01)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    for col in result['out'].columns:
-        for idx in result['out'].index:
-            assert result['out'].loc[idx, col] == pytest.approx(
-                test_out.loc[idx, col], 1)
-
-
-def test_sgd_regressor_no_output_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0}},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
-    assert instance.generate_code() is None
-
-
-def test_sgd_regressor_missing_input_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0}},
-        'named_inputs': {
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = SGDRegressorOperation(**arguments)
+    assert result['out'].columns[4] == 'success'
+
+
+@pytest.mark.parametrize(('selector', 'drop'), [
+    ("named_outputs", "output data"),
+    ('named_inputs', 'train input data')
+], ids=["missing_output", "missing_input"])
+def test_sgd_regressor_no_code_success(get_arguments, selector, drop):
+    arguments = get_arguments
+    arguments[selector].pop(drop)
+    instance = SGDRegressorModelOperation(**arguments)
     assert instance.generate_code() is None
 
 
 # # # # # # # # # # Fail # # # # # # # # # #
-def test_sgd_regressor_multiple_invalid_params_fail():
-    params = ['alpha', 'max_iter',
-              'n_iter_no_change', 'eta0']
-
-    for val in params:
-        arguments = {
-            'parameters': {'features': ['sepallength', 'sepalwidth'],
-                           'label': ['sepallength'],
-                           'multiplicity': {'train input data': 0},
-                           val: -1},
-            'named_inputs': {
-                'train input data': 'df',
-            },
-            'named_outputs': {
-                'output data': 'out'
-            }
-        }
-        with pytest.raises(ValueError) as val_err:
-            SGDRegressorOperation(**arguments)
-        assert f"Parameter '{val}' must be x>0 for task" in str(val_err.value)
-
-
-def test_sgd_regressor_invalid_random_state_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'random_state': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+@pytest.mark.parametrize('par', ['alpha', 'max_iter',
+                                 'n_iter_no_change', 'eta0'])
+def test_sgd_regressor_multiple_invalid_params_fail(get_arguments, par):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
     with pytest.raises(ValueError) as val_err:
-        SGDRegressorOperation(**arguments)
-    assert "Parameter 'random_state' must be x >= 0 for task" in str(
-        val_err.value)
+        SGDRegressorModelOperation(**arguments)
+    assert f"Parameter '{par}' must be x>0 for task" \
+           f" {SGDRegressorOperation}" in str(val_err.value)
 
 
-def test_sgd_regressor_invalid_l1_ratio_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'l1_ratio': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+@pytest.mark.parametrize('par', ['l1_ratio', 'validation_fraction'])
+def test_sgd_regressor_multiple_invalid_params_2_fail(get_arguments, par):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
     with pytest.raises(ValueError) as val_err:
-        SGDRegressorOperation(**arguments)
-    assert "Parameter 'l1_ratio' must be 0 <= x =< 1 for task" in str(
-        val_err.value)
+        SGDRegressorModelOperation(**arguments)
+    assert f"Parameter '{par}' must be 0 <= x =< 1 for task" \
+           f" {SGDRegressorOperation}" in str(val_err.value)
 
 
-def test_sgd_regressor_invalid_validation_fraction_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength'],
-                       'multiplicity': {'train input data': 0},
-                       'validation_fraction': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
+def test_sgd_regressor_invalid_random_state_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'random_state': -1})
     with pytest.raises(ValueError) as val_err:
-        SGDRegressorOperation(**arguments)
-    assert "Parameter 'validation_fraction' must be 0 <= x =< 1 for task" in \
-           str(val_err.value)
+        SGDRegressorModelOperation(**arguments)
+    assert f"Parameter 'random_state' must be x >= 0 for task" \
+           f" {SGDRegressorOperation}" in str(val_err.value)

@@ -426,7 +426,7 @@ class HuberRegressorOperation(Operation):
             self.tol = parameters.get(self.TOLERANCE_PARAM, 0.00001) or 0.00001
             self.tol = abs(float(self.tol))
             self.fit_intercept = int(
-                parameters.get(self.FIT_INTERCEPT_PARAM, 1) or 1)
+                parameters.get(self.FIT_INTERCEPT_PARAM, 1))
             self.features = parameters['features']
             self.label = parameters.get(self.LABEL_PARAM, None)
             self.prediction = self.parameters.get(self.PREDICTION_PARAM,
@@ -824,7 +824,7 @@ class MLPRegressorOperation(Operation):
                 batch_size=self.batch_size)
         functions_required.append(self.batch_size)
 
-        if self.early_stopping == 1:
+        if self.early_stopping:
             self.validation_fraction = \
                 """validation_fraction={validation_fraction}""".format(
                     validation_fraction=self.validation_fraction)
@@ -956,8 +956,8 @@ class RandomForestRegressorOperation(Operation):
                                                  None)
             self.min_impurity_decrease = float(
                 parameters.get(self.MIN_IMPURITY_DECREASE_PARAM, 0) or 0)
-            self.bootstrap = int(parameters.get(self.BOOTSTRAP_PARAM, 1) or 1)
-            self.oob_score = int(parameters.get(self.OOB_SCORE_PARAM, 1) or 1)
+            self.bootstrap = int(parameters.get(self.BOOTSTRAP_PARAM, 1))
+            self.oob_score = int(parameters.get(self.OOB_SCORE_PARAM, 1))
             self.n_jobs = int(parameters.get(self.N_JOBS_PARAM, 0) or 0)
             self.random_state = parameters.get(self.RANDOM_STATE_PARAM, None)
 
@@ -1021,20 +1021,21 @@ class RandomForestRegressorOperation(Operation):
                     self.MIN_IMPURITY_DECREASE_PARAM, self.__class__))
 
     def get_output_metrics_code(self):
-        code = """
-        ['{feature_importances}', regressor_model.feature_importances_],
-        ['{n_features}', regressor_model.n_features_],
-        ['{n_outputs}', regressor_model.n_outputs_],
-        """.format(feature_importances=gettext('The impurity-based '
-                                               'feature importances'),
-                   n_features=gettext('The number of features'),
-                   n_outputs=gettext('The number of outputs'))
+        if self.has_code:
+            code = """
+            ['{feature_importances}', regressor_model.feature_importances_],
+            ['{n_features}', regressor_model.n_features_],
+            ['{n_outputs}', regressor_model.n_outputs_],
+            """.format(feature_importances=gettext('The impurity-based '
+                                                   'feature importances'),
+                       n_features=gettext('The number of features'),
+                       n_outputs=gettext('The number of outputs'))
 
-        if self.oob_score:
-            code += """
-            ['{oob_score}', classification_model.oob_score_]
-            """.format(oob_score=gettext('Out-of-bag score'))
-        return code
+            if self.oob_score:
+                code += """
+                ['{oob_score}', classification_model.oob_score_]
+                """.format(oob_score=gettext('Out-of-bag score'))
+            return code
 
     def generate_code(self):
         if self.has_code:
@@ -1148,7 +1149,7 @@ class SGDRegressorOperation(Operation):
             self.input_treatment()
 
     def input_treatment(self):
-        self.early_stopping = True if int(self.early_stopping) == 1 else False
+        self.early_stopping = True if self.early_stopping == 1 else False
 
         self.shuffle = True if int(self.shuffle) == 1 else False
 
@@ -1174,6 +1175,13 @@ class SGDRegressorOperation(Operation):
         functions_required = ["""loss='{loss}'""".format(loss=self.loss)]
         self.power_t = """power_t={power_t}""".format(power_t=self.power_t)
         functions_required.append(self.power_t)
+        self.tol = """tol={tol}""".format(tol=self.tol)
+        functions_required.append(self.tol)
+        if self.early_stopping:
+            self.validation_fraction = \
+                """validation_fraction={validation_fraction}""".format(
+                        validation_fraction=self.validation_fraction)
+            functions_required.append(self.validation_fraction)
         self.early_stopping = """early_stopping={early_stopping}"""\
             .format(early_stopping=self.early_stopping)
         functions_required.append(self.early_stopping)
@@ -1207,11 +1215,6 @@ class SGDRegressorOperation(Operation):
         if self.learning_rate != 'optimal':
             self.eta0 = """eta0={eta0}""".format(eta0=self.eta0)
             functions_required.append(self.eta0)
-        if self.early_stopping == 1:
-            self.validation_fraction = \
-                """validation_fraction={validation_fraction}""".format(
-                        validation_fraction=self.validation_fraction)
-            functions_required.append(self.validation_fraction)
 
         self.add_functions_required = ',\n    '.join(functions_required)
 
@@ -1243,9 +1246,8 @@ class GeneralizedLinearRegressionOperation(Operation):
     NORMALIZE_ATTRIBUTE_PARAM = 'normalize'
     COPY_X_ATTRIBUTE_PARAM = 'copy_X'
     N_JOBS_ATTRIBUTE_PARAM = 'n_jobs'
-    LABEL_ATTRIBUTE_PARAM = 'labels'
-    FEATURES_ATTRIBUTE_PARAM = 'features_atr'
-    ALIAS_ATTRIBUTE_PARAM = 'alias'
+    LABEL_ATTRIBUTE_PARAM = 'label'
+    FEATURES_ATTRIBUTE_PARAM = 'features'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         Operation.__init__(self, parameters,  named_inputs,  named_outputs)
@@ -1259,12 +1261,6 @@ class GeneralizedLinearRegressionOperation(Operation):
         self.normalize = int(parameters.get(self.NORMALIZE_ATTRIBUTE_PARAM, 0))
         self.copy_X = int(parameters.get(self.COPY_X_ATTRIBUTE_PARAM, 1))
         self.n_jobs = int(parameters.get(self.N_JOBS_ATTRIBUTE_PARAM, 0))
-
-        if not all([self.LABEL_ATTRIBUTE_PARAM in parameters]):
-            msg = _("Parameters '{}' must be informed for task {}")
-            raise ValueError(msg.format(
-                self.LABEL_ATTRIBUTE_PARAM,
-                self.__class__.__name__))
 
         self.input_treatment()
         self.transpiler_utils.add_import(

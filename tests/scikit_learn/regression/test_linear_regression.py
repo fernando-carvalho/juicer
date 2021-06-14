@@ -1,9 +1,11 @@
-from tests.scikit_learn import util
-from juicer.scikit_learn.regression_operation import LinearRegressionOperation
-from sklearn.linear_model import ElasticNet
-from tests.scikit_learn.util import get_X_train_data, get_label_data
+import numpy as np
 import pytest
-import pandas as pd
+from sklearn.linear_model import ElasticNet
+
+from juicer.scikit_learn.regression_operation import \
+    LinearRegressionModelOperation, LinearRegressionOperation
+from tests.scikit_learn import util
+from tests.scikit_learn.util import get_X_train_data, get_label_data
 
 
 # pd.set_option('display.max_rows', None)
@@ -11,442 +13,21 @@ import pandas as pd
 # pd.set_option('display.max_colwidth', None)
 
 
-# LinearRegression:
-#
-#
-# # # # # # # # # # Success # # # # # # # # # #
-def test_linear_regression_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'normalize': False},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=False, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
+@pytest.fixture
+def get_columns():
+    return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth']
 
 
-def test_linear_regression_alpha_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'alpha': 0.5},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=0.5, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=True, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
+@pytest.fixture
+def get_df(get_columns):
+    return util.iris(get_columns)
 
 
-def test_linear_regression_l1_ratio_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'l1_ratio': 1.0},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=1.0, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=True, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_normalize_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'normalize': True},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=True, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_max_iter_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_iter': 500},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=500, random_state=None,
-                         normalize=True, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_tol_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'tol': 0.652},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.652,
-                         max_iter=1000, random_state=None,
-                         normalize=False, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_random_state_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'random_state': 2002},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=2002,
-                         normalize=False, positive=False,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_prediction_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'prediction': 'success'},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    assert result['out'].columns[2] == 'success'
-
-
-def test_linear_regression_positive_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'positive': True},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=False, positive=True,
-                         fit_intercept=False)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_fit_intercept_param_success():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    test_df = df.copy()
-
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'fit_intercept': True},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    result = util.execute(util.get_complete_code(instance),
-                          {'df': df})
-    test_out = test_df
-    X_train = get_X_train_data(test_df, ['sepallength', 'sepalwidth'])
-    y = get_label_data(test_df, ['sepallength'])
-
-    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
-                         max_iter=1000, random_state=None,
-                         normalize=False, positive=False,
-                         fit_intercept=True)
-    model_1.fit(X_train, y)
-    test_out['prediction'] = model_1.predict(X_train).tolist()
-    assert result['out'].equals(test_out)
-
-
-def test_linear_regression_no_output_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    assert instance.generate_code() is None
-
-
-def test_linear_regression_missing_input_implies_no_code_success():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    assert instance.generate_code() is None
-
-
-# # # # # # # # # # Success # # # # # # # # # #
-def test_linear_regression_invalid_alpha_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'alpha': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    with pytest.raises(ValueError) as val_err:
-        LinearRegressionOperation(**arguments)
-    assert "Parameter 'alpha' must be x>0 for task" in str(val_err.value)
-
-
-def test_linear_regression_invalid_max_iter_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'max_iter': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    with pytest.raises(ValueError) as val_err:
-        LinearRegressionOperation(**arguments)
-    assert "Parameter 'max_iter' must be x>0 for task" in str(val_err.value)
-
-
-def test_linear_regression_invalid_l1_ratio_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'l1_ratio': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    with pytest.raises(ValueError) as val_err:
-        LinearRegressionOperation(**arguments)
-    assert "Parameter 'l1_ratio' must be 0<=x<=1 for task" in str(val_err.value)
-
-
-def test_linear_regression_invalid_random_state_param_fail():
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'multiplicity': {'train input data': 0},
-                       'label': ['sepallength'],
-                       'random_state': -1},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    with pytest.raises(ValueError) as val_err:
-        LinearRegressionOperation(**arguments)
-    assert "Parameter 'random_state' must be x>=0 for task" in str(val_err.value)
-
-
-def test_linear_regression_missing_features_param_fail():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'multiplicity': {'train input data': 0},
-                       'label': ['sepallength']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    with pytest.raises(KeyError) as key_err:
-        LinearRegressionOperation(**arguments)
-    assert "features" in str(key_err.value)
-
-
-def test_linear_regression_missing_label_param_fail():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
+@pytest.fixture
+def get_arguments(get_columns):
+    return {
+        'parameters': {'features': get_columns,
+                       'label': [get_columns[0]],
                        'multiplicity': {'train input data': 0}},
         'named_inputs': {
             'train input data': 'df',
@@ -455,27 +36,121 @@ def test_linear_regression_missing_label_param_fail():
             'output data': 'out'
         }
     }
-    instance = LinearRegressionOperation(**arguments)
-    with pytest.raises(TypeError) as typ_err:
-        util.execute(util.get_complete_code(instance),
-                     {'df': df})
-    assert "object of type 'NoneType' has no len()" in str(typ_err.value)
 
 
-def test_linear_regression_missing_multiplicity_param_fail():
-    df = util.iris(['sepallength', 'sepalwidth'], size=10)
-    arguments = {
-        'parameters': {'features': ['sepallength', 'sepalwidth'],
-                       'label': ['sepallength']},
-        'named_inputs': {
-            'train input data': 'df',
-        },
-        'named_outputs': {
-            'output data': 'out'
-        }
-    }
-    instance = LinearRegressionOperation(**arguments)
-    with pytest.raises(KeyError) as key_err:
-        util.execute(instance.generate_code(),
-                     {'df': df})
-        assert "multiplicity" in str(key_err.value)
+# LinearRegression:
+#
+#
+# # # # # # # # # # Success # # # # # # # # # #
+@pytest.mark.parametrize(("operation_par", "algorithm_par"), [
+    ({"normalize": False}, {"normalize": False}),
+
+    ({'alpha': 0.5}, {'alpha': 0.5, 'normalize': True}),
+
+    ({'l1_ratio': 1.0}, {'l1_ratio': 1.0, 'normalize': True}),
+
+    ({'normalize': True}, {'normalize': True}),
+
+    ({'max_iter': 500}, {'max_iter': 500, 'normalize': True}),
+
+    ({'tol': 0.652}, {'tol': 0.652, 'normalize': True}),
+
+    ({'random_state': 2002}, {'random_state': 2002, 'normalize': True}),
+
+    ({'positive': True}, {'positive': True, 'normalize': True}),
+
+    ({'random_state': 1, 'fit_intercept': True},
+     {'random_state': 1, 'fit_intercept': True, 'normalize': True})
+], ids=["default_params", 'alpha_param', 'l1_ratio_param', 'normalize_param',
+        'max_iter_param', 'tol_param', "random_state_param", 'positive_param',
+        'fit_intercept_param'])
+def test_linear_regression_params_success(get_arguments, get_columns, get_df,
+                                          operation_par, algorithm_par):
+    df = get_df.copy()
+    test_df = get_df.copy()
+    arguments = get_arguments
+
+    arguments['parameters'].update(operation_par)
+
+    util.add_minimum_ml_args(arguments)
+    instance = LinearRegressionModelOperation(**arguments)
+    result = util.execute(util.get_complete_code(instance),
+                          {'df': df})
+    x_train = get_X_train_data(test_df, get_columns)
+    y = get_label_data(test_df, [get_columns[0]])
+
+    model_1 = ElasticNet(alpha=1.0, l1_ratio=0.5, tol=0.0001,
+                         max_iter=1000, random_state=None,
+                         normalize=False, positive=False,
+                         fit_intercept=False)
+
+    for key, value in algorithm_par.items():
+        setattr(model_1, key, value)
+
+    model_1.fit(x_train, y)
+    test_df['prediction'] = model_1.predict(x_train).tolist()
+    assert np.allclose(result['out'], test_df, atol=1)
+    assert str(result['regressor_model']) == str(model_1)
+
+
+def test_linear_regression_prediction_param_success(get_arguments, get_df):
+    df = get_df.copy()
+    arguments = get_arguments
+    arguments['parameters'].update({'prediction': 'success'})
+    util.add_minimum_ml_args(arguments)
+    instance = LinearRegressionModelOperation(**arguments)
+    result = util.execute(util.get_complete_code(instance),
+                          {'df': df})
+    assert result['out'].columns[4] == 'success'
+
+
+@pytest.mark.parametrize(('selector', 'drop'), [
+    ("named_outputs", "output data"),
+
+    ("named_inputs", "train input data")
+
+], ids=["missing_output", "missing_input"])
+def test_linear_regression_no_code_success(selector, drop, get_arguments):
+    arguments = get_arguments
+    arguments[selector].pop(drop)
+    instance = LinearRegressionModelOperation(**arguments)
+    assert instance.generate_code() is None
+
+
+# # # # # # # # # # Success # # # # # # # # # #
+@pytest.mark.parametrize('par', ['alpha', 'max_iter'])
+def test_linear_regression_invalid_params_fail(get_arguments, par):
+    arguments = get_arguments
+    arguments['parameters'].update({par: -1})
+    with pytest.raises(ValueError) as val_err:
+        LinearRegressionModelOperation(**arguments)
+    assert f"Parameter '{par}' must be x>0 for task" \
+           f" {LinearRegressionOperation}" in str(val_err.value)
+
+
+def test_linear_regression_invalid_l1_ratio_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'l1_ratio': -1})
+    with pytest.raises(ValueError) as val_err:
+        LinearRegressionModelOperation(**arguments)
+    assert f"Parameter 'l1_ratio' must be 0<=x<=1 for task" \
+           f" {LinearRegressionOperation}" in str(val_err.value)
+
+
+def test_linear_regression_invalid_random_state_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].update({'random_state': -1})
+    with pytest.raises(ValueError) as val_err:
+        LinearRegressionModelOperation(**arguments)
+    assert f"Parameter 'random_state' must be x>=0 for task" \
+           f" {LinearRegressionOperation}" in str(val_err.value)
+
+
+def test_linear_regression_missing_label_param_fail(get_arguments):
+    arguments = get_arguments
+    arguments['parameters'].pop('label')
+    with pytest.raises(ValueError) as val_err:
+        LinearRegressionModelOperation(**arguments)
+    assert "Parameters 'features' and 'label' must be informed for task" \
+           " RegressionModelOperation" in str(
+        val_err.value)
