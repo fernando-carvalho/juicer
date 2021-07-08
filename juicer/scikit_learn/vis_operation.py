@@ -8,6 +8,8 @@ import json
 from collections import Iterable
 from textwrap import dedent
 
+import pandas as pd
+import numpy as np
 import datetime
 
 from juicer import auditing
@@ -25,6 +27,12 @@ COLORS_PALETTE = list(reversed([
     '#005559', '#016D72', '#01898F', '#1E969C', '#3FA8AD',  # blue
     '#072163', '#0C2D7F', '#113A9F', '#3054AD', '#506FBB', ]))  # purple
 SHAPES = ['diamond', 'point', 'circle']
+
+TRUE_VALS = [True, 1, '1']
+
+
+def _get_color_palette(idx):
+    return COLORS_PALETTE[(idx % 6) * 5 + ((idx // 6) % 5)]
 
 
 def get_caipirinha_config(config, indentation=0):
@@ -373,6 +381,8 @@ class MapOperation(VisualizationMethodOperation):
 
 class SummaryStatisticsOperation(VisualizationMethodOperation):
     ATTRIBUTES_PARAM = 'attributes'
+    CORRELATION_PARAM = 'correlation'
+    COMPLETE_ANALYSIS_PARAM = 'complete'
 
     def __init__(self, parameters, named_inputs, named_outputs):
         if not parameters.get(self.TITLE_PARAM):
@@ -381,8 +391,14 @@ class SummaryStatisticsOperation(VisualizationMethodOperation):
                                               named_outputs)
         self.attributes = parameters.get(self.ATTRIBUTES_PARAM, None)
 
+        self.correlation = parameters.get(self.CORRELATION_PARAM) in TRUE_VALS
+        self.complete = parameters.get(self.COMPLETE_ANALYSIS_PARAM) \
+            in TRUE_VALS
+
     def get_model_parameters(self):
-        return {self.ATTRIBUTES_PARAM: self.attributes or []}
+        return {self.ATTRIBUTES_PARAM: self.attributes or [],
+                self.CORRELATION_PARAM: self.correlation,
+                self.COMPLETE_ANALYSIS_PARAM: self.complete}
 
     def get_model_name(self):
         return SummaryStatisticsModel.__name__
@@ -508,7 +524,7 @@ class BarChartModel(ChartVisualization):
         colors = {}
         color_counter = 0
         for i, attr in enumerate(y_attrs):
-            color = COLORS_PALETTE[(i % 6) * 5 + ((i // 6) % 5)]
+            color = _get_color_palette(i)
             colors[attr] = {
                 'fill': color,
                 'gradient': color,
@@ -553,8 +569,7 @@ class BarChartModel(ChartVisualization):
             x_value = row_x
             if x_value not in colors:
                 inx_row += 1
-                color = COLORS_PALETTE[(color_counter % 6) * 5 +
-                                       ((color_counter // 6) % 5)]
+                color = _get_color_palette(color_counter)
                 colors[x_value] = {
                     'fill': color,
                     'gradient': color,
@@ -565,8 +580,7 @@ class BarChartModel(ChartVisualization):
                 'x': LineChartModel._format(x_value),
                 'name': row_x,
                 'key': row_x,
-                'color': COLORS_PALETTE[
-                    (inx_row % 6) * 5 + ((inx_row // 6) % 5)],
+                'color': _get_color_palette(inx_row),
                 'values': []
             }
             result['data'].append(data)
@@ -659,7 +673,7 @@ class PieChartModel(ChartVisualization):
                 'id': '{}_{}'.format(label_attr, i),
                 'name': row_y,
                 'label': row_y,
-                'color': COLORS_PALETTE[(i % 6) * 5 + ((i // 6) % 5)],
+                'color': _get_color_palette(i),
             }
             result['data'].append(data)
             if i >= 100:
@@ -686,8 +700,8 @@ class LineChartModel(ChartVisualization):
             data.append({
                 "id": attr,
                 "name": attr,
-                "color": COLORS_PALETTE[(i % 6) * 5 + ((i // 6) % 5)],
-                "pointColor": COLORS_PALETTE[(i % 6) * 5 + ((i // 6) % 5)],
+                "color": _get_color_palette(i),
+                "pointColor": _get_color_palette(i),
                 "pointShape": SHAPES[i % len(SHAPES)],
                 "pointSize": 3,
                 "values": []
@@ -889,8 +903,7 @@ class ScatterPlotModel(ChartVisualization):
             if series_attr:
                 series_value = row[series_attr_idx]
                 if series_value not in series:
-                    color = COLORS_PALETTE[(current_color % 6) * 5 +
-                                           ((current_color // 6) % 5)]
+                    color = _get_color_palette(current_color)
                     series[series_value] = {
                         "id": series_value,
                         "name": series_value,
@@ -1003,11 +1016,10 @@ class SummaryStatisticsModel(TableVisualizationModel):
                                          title, column_names, orientation,
                                          id_attribute, value_attribute,
                                          params)
+
         from pandas.api.types import is_numeric_dtype
 
-        self.names = ''
-
-        all_attr = [t for t in self.data.columns]
+        all_attr = list(self.data.columns)
         if len(self.params['attributes']) == 0:
             self.attrs = all_attr
         else:
@@ -1017,15 +1029,29 @@ class SummaryStatisticsModel(TableVisualizationModel):
         self.numeric_attrs = [
             t for t in self.attrs if is_numeric_dtype(self.data[t])]
 
-        self.names = [_('attribute'), _('count'),
-                      _('approx. distinct'), _('missing'),
-                      _('min'),  _('max'), _('avg'),  _('std. dev.'),
-                      _('skewness'), _('kurtosis')]
+        self.names = collections.OrderedDict([
+            ('attribute', _('attribute')), ('count', _('count')),
+            ('unique', _('unique')), ('mean', _('mean')),
+            ('min', _('min')), ('max', _('max')),
+            ('std. dev.', _('std. dev.')), ('sum', _('sum')),
+            ('25%', _('25%')), ('50%', _('50%')), ('75%', _('75%')),
+            ('mode', _('mode')), ('iqr', _('iqr')),
+            ('skewness', _('skewness')), ('kurtosis', _('kurtosis'))
+        ])
 
-        self.names.extend(
-            [_('correlation to {} (Pearson)').format(attr) for attr in
-             self.numeric_attrs])
-        self.column_names = self.names
+        complete = self.params[
+            SummaryStatisticsOperation.COMPLETE_ANALYSIS_PARAM]
+        correlation = self.params[SummaryStatisticsOperation.CORRELATION_PARAM]
+
+        if complete:
+            self.names['outliers'] = _('outliers')
+            self.names['histogram'] = _('histogram')
+            self.names['top'] = _('top')
+
+        if correlation or complete:
+            for attr in self.numeric_attrs:
+                col = 'correlation to {} (Pearson)'.format(attr)
+                self.names[col] = _(col)
 
     def get_icon(self):
         return 'fa-table'
@@ -1035,51 +1061,102 @@ class SummaryStatisticsModel(TableVisualizationModel):
         """
         Returns statistics about attributes in a data frame
         """
-        import pandas as pd
+
+        def find_outliers(df, summary, whisker_width=1.5):
+            outliers = dict()
+            for column in df.columns:
+                iqr = summary.loc[column, 'iqr']
+                q3 = summary.loc[column, '75%']
+                q1 = summary.loc[column, '25%']
+
+                lower_bound = q1 - (whisker_width * iqr)
+                upper_bound = q3 + (whisker_width * iqr)
+
+                query = (df[column] < lower_bound) | (df[column] > upper_bound)
+                outliers[column] = [
+                    list(df[column].loc[query].sort_values().unique())]
+
+            return pd.DataFrame.from_dict(outliers, orient='index',
+                                          columns=['outliers'])
+
+        def gen_top_freq(df, count, n=10):
+            top = {}
+            mode = {}
+            for col in df.columns:
+                res_tmp = df[col].value_counts().iloc[:n]
+                mode[col] = res_tmp.index[0]
+                c = count.loc[col, 'count']
+                res = {k: [v, (v / c) * 100] for k, v in
+                       res_tmp.to_dict().items()}
+                top[col] = [res]
+
+            top = pd.DataFrame.from_dict(top, orient="index", columns=['top'])
+            mode = pd.DataFrame.from_dict(mode, orient="index",
+                                          columns=['mode'])
+            return top, mode
+
+        def gen_histogram(df, cols, bins=10):
+            histograms = dict()
+            for col in cols:
+                hist, edges = np.histogram(df[col].dropna().to_numpy(),
+                                           bins=bins, density=False)
+                histograms[col] = json.dumps(
+                        {"{}-{}".format(edges[i], edges[i + 1]): str(hist[i])
+                         for i in range(bins)})
+            return pd.DataFrame.from_dict(histograms, orient='index',
+                                          columns=['histogram'])
 
         data = self.data[self.attrs]
-        non_numerical = [s for s in self.attrs if s not in self.numeric_attrs]
 
-        # only numerical
-        rows = data.describe().transpose()
-        rows = rows.drop(columns=['25%', '50%', '75%'])
-        skewness = [data[c].skew(skipna=True) for c in self.numeric_attrs]
-        kurtosis = [data[c].kurtosis(skipna=True) for c in self.numeric_attrs]
+        summary = data.describe(include=None, datetime_is_numeric=True) \
+            .transpose() \
+            .drop(['count'], axis=1)
 
-        rows['skewness'] = skewness
-        rows['kurtosis'] = kurtosis
+        sum_metric = data.sum(skipna=True, numeric_only=True).to_frame('sum')
+        skewness = data.skew(skipna=True).to_frame('skewness')
+        kurtosis = data.kurtosis(skipna=True).to_frame('kurtosis')
+        iqr = (summary['75%'] - summary['25%']).to_frame('iqr')
+        unique = data.nunique(dropna=True).to_frame('unique')
+        count = data.count().to_frame('count')
+        top, mode = gen_top_freq(data, count, n=10)
 
-        corr = data[self.numeric_attrs].corr()
-        corr_cols = ["to_{}".format(c) for c in self.numeric_attrs]
-        corr.columns = corr_cols
-        rows = pd.concat([rows, corr], axis=1, sort=False)
-        rows.insert(loc=0, column='attribute', value=self.numeric_attrs)
+        summary = summary \
+            .rename(columns={"std": 'std. dev.'})\
+            .merge(count, left_index=True, right_index=True, how='outer') \
+            .merge(skewness, left_index=True, right_index=True, how='left') \
+            .merge(kurtosis, left_index=True, right_index=True, how='left') \
+            .merge(iqr, left_index=True, right_index=True, how='left') \
+            .merge(sum_metric, left_index=True, right_index=True, how='left') \
+            .merge(unique, left_index=True, right_index=True, how='left') \
+            .merge(mode, left_index=True, right_index=True, how='left')
 
-        size = len(data)
-        new_rows = []
-        for i, col in enumerate(non_numerical):
-            row = ['-' for _ in range(len(rows.columns))]
-            row[0] = col
-            row[1] = size
-            row[4] = data[col].min()
-            row[5] = data[col].max()
-            new_rows.append(row)
+        correlation = self.params[SummaryStatisticsOperation.CORRELATION_PARAM]
+        complete = self.params[
+            SummaryStatisticsOperation.COMPLETE_ANALYSIS_PARAM]
 
-        new_rows = pd.DataFrame(new_rows, columns=rows.columns)
-        rows = rows.append(new_rows,  ignore_index=True)
+        if complete:
+            outliers = find_outliers(data, summary)
+            numeric_cols = summary.index[~summary['mean'].isnull()].tolist()
+            histogram = gen_histogram(data, numeric_cols, bins=10)
 
-        nunique = [data[c].nunique()
-                   for c in self.numeric_attrs+non_numerical]
-        missing = [data[c].isnull().sum()
-                   for c in self.numeric_attrs+non_numerical]
+            summary = summary \
+                .merge(outliers,
+                       left_index=True, right_index=True, how='left') \
+                .merge(histogram,
+                       left_index=True, right_index=True, how='left') \
+                .merge(top, left_index=True, right_index=True, how='left')
 
-        rows['missing'] = missing
-        rows['unique'] = nunique
+        if correlation or complete:
+            corr = data.corr()
+            corr.columns = ['correlation to {} (Pearson)'.format(col)
+                            for col in corr.columns]
+            summary = summary \
+                .merge(corr, left_index=True, right_index=True, how='left')
 
-        cols = ['attribute', 'count', 'unique', 'missing',
-                'min', 'max', 'mean', 'std',  'skewness',
-                'kurtosis'] + corr_cols
+        summary['attribute'] = summary.index
+        # reordering and renaming
+        summary = summary[self.names.keys()].rename(columns=self.names)
+        columns = summary.columns.tolist()
+        rows = summary[columns].to_numpy().tolist()
 
-        rows = rows[cols].to_numpy().tolist()
-
-        return {"rows": rows, "attributes": self.get_column_names().split(',')}
+        return {"rows": rows, "attributes": columns}
