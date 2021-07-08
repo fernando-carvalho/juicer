@@ -455,344 +455,248 @@ class EvaluateModelOperation(Operation):
         return ''
 
     def generate_code(self):
+
         if not self.has_code:
             return ''
-        else:
-            display_text = self.parameters['task']['forms'].get(
-                'display_text', {'value': 1}).get('value', 1) in (1, '1')
-            display_image = self.parameters['task']['forms'].get(
-                'display_image', {'value': 1}).get('value', 1) in (1, '1')
 
-            if self.METRICS_LIST[self.metric][1] == 2:  # regression
-                code_input = """
-            display_text = {display_text}
-            display_image = {display_image}
-            final_y_true = {input}['{second_attr}'].to_numpy()
-            final_y_pred = {input}['{prediction_attr}'].to_numpy()
-            """
-            elif self.METRICS_LIST[self.metric][0] == 0:  # supervised metric
-                code_input = """
-            display_text = {display_text}
-            display_image = {display_image}
-            y_true = get_label_data({input}, ['{second_attr}'])
-            y_pred = get_label_data({input}, ['{prediction_attr}'])
+        display_text = self.parameters['task']['forms'].get(
+            'display_text', {'value': 1}).get('value', 1) in (1, '1')
+        display_image = self.parameters['task']['forms'].get(
+            'display_image', {'value': 1}).get('value', 1) in (1, '1')
+
+        is_regression = self.METRICS_LIST[self.metric][1] == 2
+        is_classification = self.METRICS_LIST[self.metric][1] == 0
+        is_supervised_metric = self.METRICS_LIST[self.metric][0] == 0
+
+        self.template = """
+        {%- if is_regression %}
+        final_y_true = {{input}}['{{second_attr}}'].to_numpy()
+        final_y_pred = {{input}}['{{prediction_attr}}'].to_numpy()
+        {%- elif is_supervised_metric %}
+        y_true = get_label_data({{input}}, ['{{second_attr}}'])
+        y_pred = get_label_data({{input}}, ['{{prediction_attr}}'])
+
+        # When Label attribute is categorical/string
+        if not is_numeric_dtype(y_true):
+            le = LabelEncoder()
+            le.fit(y_true)
+            classes = le.classes_.tolist()
+            final_y_true = le.transform(y_true)
+            final_y_pred = le.transform(y_pred)
+        else:
+            classes = list(set(y_true))
+            final_y_true = y_true
+            final_y_pred = y_pred
+        {%- else %}
+        X = get_X_train_data({{input}}, {{second_attr}})
+        y_pred = {{input}}['{{prediction_attr}}'].to_numpy().tolist()
+
+        # When Prediction attribute is categorical/string
+        if not is_numeric_dtype(y_pred):
+            le = LabelEncoder()
+            le.fit(y_pred)
+            final_y_pred = le.transform(y_pred)
+        else:
+            final_y_pred = y_pred
+        {% endif %}
+
+        {% if display_text -%}
+        headers = {{table_headers}}
+        {%- if is_classification %}
+        rows = [
+            ['F1', f1_score(final_y_true, final_y_pred, average='weighted')],
+            ['Weighted Precision', precision_score(final_y_true, 
+                final_y_pred, average='weighted')],
+            ['Weighted Recall', recall_score(final_y_true, final_y_pred,
+                average='weighted')],
+            ['Balanced Accurary', balanced_accuracy_score(final_y_true,
+                final_y_pred)],
+            ['Cohens kappa', cohen_kappa_score(final_y_true, final_y_pred)],
+            ['Jaccard coefficient score', jaccard_score(final_y_true, 
+                final_y_pred, average='weighted')],
+            ['Matthews correlation coefficient (MCC)', 
+                 matthews_corrcoef(final_y_true, final_y_pred)]
+        ]
+
+        if len(set(final_y_true)) == 2:
+            if set(final_y_true) != set([0, 1]):
+                le = LabelEncoder()
+                le.fit(final_y_true)
+                final_y_true = le.transform(final_y_true)
+                final_y_pred = le.transform(final_y_pred)
+            rows.append(['Area under ROC', 
+                roc_auc_score(final_y_true, final_y_pred)])
+            rows.append(['Area under Precision-Recall', 
+                average_precision_score(final_y_true, final_y_pred)])
+        {%- elif is_regression %}
+        rows = [
+            ['Maximum error', max_error(final_y_true, final_y_pred)],
+            ['Explained variance score', 
+                explained_variance_score(final_y_true, final_y_pred)],
+            ['Mean squared error', 
+                mean_squared_error(final_y_true, final_y_pred)],
+            ['Root mean squared error', 
+                np.sqrt(mean_squared_error(final_y_true, final_y_pred))],
+            ['Mean absolute error', 
+                mean_absolute_error(final_y_true, final_y_pred)],
+            ['Median absolute error', 
+                median_absolute_error(final_y_true, final_y_pred)],
+            ['R^2 (coefficient of determination)', 
+                r2_score(final_y_true, final_y_pred)],
+        ]
+
+        if (final_y_true < 0).any() or (final_y_pred < 0).any():
+            if '{{metric}}' == 'mean_squared_log_error':
+                raise ValueError('Mean Squared Logarithmic Error cannot' 
+                    ' be used when targets contain negative values.')
+        else:
+            rows.append(['Mean squared log error', 
+             mean_squared_log_error(final_y_true, final_y_pred)])
+        {%- elif is_supervised_metric %}
+        rows = [
+            ['Homogeneity, completeness and V-Measure', 
+                homogeneity_completeness_v_measure(final_y_true, 
+                final_y_pred)],
+            ['Fowlkes-Mallows index', 
+                fowlkes_mallows_score(final_y_true, final_y_pred)],
+            ['Adjusted Mutual Information', 
+                adjusted_mutual_info_score(final_y_true, final_y_pred)],
+        ]
+        {%- else %}
+        rows = [
+                ['Silhouette Coefficient',  silhouette_score(X, final_y_pred)],
+                ['Calinski and Harabaz score',  
+                    calinski_harabasz_score(X, final_y_pred)],
+                ['Davies-Bouldin score', davies_bouldin_score(X, final_y_pred)],
+        ]  
+        {% endif %}
+        
+        content = SimpleTableReport(
+                'table table-striped table-bordered table-sm',
+                headers, rows, title='{{title}}').generate()
+
+        emit_event(
+            'update task', status='COMPLETED',
+            identifier='{{task_id}}',
+            message=content,
+            type='HTML', title='{{title}}',
+            task=dict([('id', '{{task_id}}')]),
+            operation=dict([('id', {{operation_id}})]),
+            operation_id={{operation_id}}) 
             
-            # When Label attribute is categorical/string
-            if not is_numeric_dtype(y_true):
-                le = LabelEncoder()
-                le.fit(y_true)
-                classes = le.classes_.tolist()
-                final_y_true = le.transform(y_true)
-                final_y_pred = le.transform(y_pred)
-            else:
-                classes = list(set(y_true))
-                final_y_true = y_true
-                final_y_pred = y_pred
-            """
-            else:   # unsupervised metric
-                code_input = """
-            display_text = {display_text}
-            display_image = {display_image}
-            X = get_X_train_data({input}, {second_attr})
-            y_pred = {input}['{prediction_attr}'].to_numpy().tolist()
+        headers = {{params_table_headers}}
+        params = {{model}}.get_params()
+        rows = []
+        for p in params:
+            rows.append([p, params[p]])
 
-            # When Prediction attribute is categorical/string
-            if not is_numeric_dtype(y_pred):
-                le = LabelEncoder()
-                le.fit(y_pred)
-                final_y_pred = le.transform(y_pred)
-            else:
-                final_y_pred = y_pred
-            """
+        content = SimpleTableReport(
+                'table table-striped table-bordered table-sm',
+                headers, rows, title='{{params_title}}').generate()
 
-            code = [code_input]
+        emit_event(
+            'update task', status='COMPLETED',
+            identifier='{{task_id}}',
+            message=content,
+            type='HTML', title='{{title}}',
+            task=dict([('id', '{{task_id}}')]),
+            operation=dict([('id', {{operation_id}})]),
+            operation_id={{operation_id}}) 
+        {% endif %}
+       
+        {% if display_image %}
+        {% if is_supervised_metric %} 
+        if len(final_y_true) < 2000:
+            identity = range(int(max(max(final_y_true), max(final_y_pred))))
+            report2 = MatplotlibChartReport().plot(
+                    '{{plot_title}}',
+                    '{{plot_x_title}}',
+                    '{{plot_y_title}}',
+                    identity, identity, 'r-',
+                    final_y_true, final_y_pred,'b.', linewidth=1, 
+                    submission_lock=submission_lock)
 
-            if self.type_model == 'classification':
-                self._get_code_for_classification_metrics(code)
-            elif self.type_model == 'regression':
-                self._get_code_for_regression_metrics(code)
-            elif self.type_model == 'clustering':
-                self._get_code_for_clustering_metrics(code)
+            emit_event(
+                'update task', status='COMPLETED',
+                identifier='{{task_id}}',
+                message=report2,
+                type='IMAGE', title='{{plot_title}}',
+                task=dict([('id', '{{task_id}}')]),
+                operation=dict([('id', {{operation_id}})]),
+                operation_id={{operation_id}}) 
+        {%- endif %}
 
-            self._get_code_for_summary(code)
+        {% if is_classification %}
+        content = ConfusionMatrixImageReport(
+            cm=confusion_matrix(final_y_true, final_y_pred), 
+            classes=classes,).generate(submission_lock)
 
-            code = """\n""".join(code).format(
-                display_text=display_text,
-                display_image=display_image,
-                evaluator_out=self.evaluator_out,
-                join_plot_title=_('Prediction versus Residual'),
-                join_plot_y_title=_('Residual'),
-                join_plot_x_title=_('Prediction'),
-                input=self.named_inputs['input data'],
-                metric=self.metric,
-                prediction_attr=self.prediction_attribute,
-                second_attr=self.second_attribute,
-                model=self.model,
-                model_output=self.model_out,
-                operation_id=self.parameters['operation_id'],
-                params_title=_('Parameters for this estimator'),
-                params_table_headers=[_('Parameters'), _('Value')],
-                plot_title=_('Actual versus Prediction'),
-                plot_x_title=_('Actual'),
-                plot_y_title=_('Prediction'),
-                table_headers=[_('Metric'), _('Value')],
-                task_id=self.parameters['task_id'],
-                title=_('Evaluation result'),
+        emit_event(
+                'update task', status='COMPLETED',
+                identifier='{{task_id}}',
+                message=content,
+                type='IMAGE', title='{{title}}',
+                task=dict([('id', '{{task_id}}')]),
+                operation=dict([('id', {{operation_id}})]),
+                operation_id={{operation_id}}) 
+     
+        {% elif is_regression %}
+        if len(final_y_true) < 2000:
+            residuals = final_y_true - final_y_pred
+            pandas_df = pd.DataFrame.from_records(
+                [
+                    dict(prediction=x[0], residual=x[1])
+                        for x in zip(final_y_true, residuals)
+                ]
             )
+            pandas_df.rename(index=str, columns=dict(
+                        prediction='{join_plot_x_title}',
+                        residuals='{join_plot_y_title}'))
 
-            return dedent(code)
-
-    @staticmethod
-    def _get_code_for_classification_metrics(code):
-        """
-        Generate code for other classification metrics besides those related to
-        area.
-        """
-        code.append("""
-            # classification metrics
-            if display_image:
-                content = ConfusionMatrixImageReport(
-                    cm=confusion_matrix(final_y_true, final_y_pred), 
-                    classes=classes,).generate(submission_lock)
-
-                emit_event(
-                    'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=content,
-                    type='IMAGE', title='{title}',
-                    task={{'id': '{task_id}'}},
-                    operation={{'id': {operation_id}}},
-                    operation_id={operation_id})
-
-            if display_text:
-
-                headers = {table_headers}
-                rows = [
-                    ['F1', f1_score(final_y_true, final_y_pred, 
-                    average='weighted')],
-                    ['Weighted Precision', precision_score(final_y_true, 
-                    final_y_pred, average='weighted')],
-                    ['Weighted Recall', recall_score(final_y_true, final_y_pred,
-                    average='weighted')],
-                    ['Balanced Accurary', balanced_accuracy_score(final_y_true,
-                    final_y_pred)],
-                    ['Cohens kappa', cohen_kappa_score(final_y_true, 
-                    final_y_pred)],
-                    ['Jaccard coefficient score', jaccard_score(final_y_true, 
-                    final_y_pred, average='weighted')],
-                    ['Matthews correlation coefficient (MCC)', 
-                     matthews_corrcoef(final_y_true, final_y_pred)]
-                ]
-
-                if len(set(final_y_true)) == 2:
-                    if set(final_y_true) != set([0,1]):
-                        le = LabelEncoder()
-                        le.fit(final_y_true)
-                        final_y_true = le.transform(final_y_true)
-                        final_y_pred = le.transform(final_y_pred)
-                    rows.append(['Area under ROC', 
-                     roc_auc_score(final_y_true, final_y_pred)])
-                    rows.append(['Area under Precision-Recall', 
-                     average_precision_score(final_y_true, final_y_pred)])
-
-                content = SimpleTableReport(
-                        'table table-striped table-bordered table-sm',
-                        headers, rows, title='{title}').generate()
-
-                emit_event(
-                    'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=content,
-                    type='HTML', title='{title}',
-                    task={{'id': '{task_id}'}},
-                    operation={{'id': {operation_id}}},
-                    operation_id={operation_id})
-        """)
-
-    def _get_code_for_clustering_metrics(self, code):
-        """
-        Code for the evaluator when metric is related to clustering
-        """
-        if self.METRICS_LIST[self.metric][0] == 0:
-            code.append("""
-                # clustering metrics
-                if display_text:
-                    headers = {table_headers}
-                    rows = [
-                        ['Homogeneity, completeness and V-Measure', 
-                homogeneity_completeness_v_measure(final_y_true, final_y_pred)],
-                        ['Fowlkes-Mallows index', 
-                            fowlkes_mallows_score(final_y_true, final_y_pred)],
-                        ['Adjusted Mutual Information', 
-                        adjusted_mutual_info_score(final_y_true, final_y_pred)],
-                    ]
+            content = SeabornChartReport().jointplot(pandas_df, 
+                'prediction', 'residual', '{{join_plot_title}}',
+                '{{join_plot_x_title}}', '{{join_plot_y_title}}', 
+                submission_lock)
                     
-                    content = SimpleTableReport(
-                           'table table-striped table-bordered table-sm',
-                           headers, rows, title='{title}').generate()
-    
-                    emit_event(
-                       'update task', status='COMPLETED',
-                       identifier='{task_id}',
-                       message=content,
-                       type='HTML', title='{title}',
-                       task={{'id': '{task_id}'}},
-                       operation={{'id': {operation_id}}},
-                       operation_id={operation_id})
-                    """)
-        else:
-            code.append("""
-                # clustering metrics
-                if display_text:
-                    headers = {table_headers}
-                    rows = [
-                        ['Silhouette Coefficient', 
-                        silhouette_score(X, final_y_pred)],
-                        ['Calinski and Harabaz score', 
-                        calinski_harabasz_score(X, final_y_pred)],
-                        ['Davies-Bouldin score', 
-                        davies_bouldin_score(X, final_y_pred)],
-                    ]
-                    
-                    content = SimpleTableReport(
-                           'table table-striped table-bordered table-sm',
-                           headers, rows, title='{title}').generate()
-    
-                    emit_event(
-                       'update task', status='COMPLETED',
-                       identifier='{task_id}',
-                       message=content,
-                       type='HTML', title='{title}',
-                       task={{'id': '{task_id}'}},
-                       operation={{'id': {operation_id}}},
-                       operation_id={operation_id})
-            """)
-
-    @staticmethod
-    def _get_code_for_regression_metrics(code):
-        """
-        Code for the evaluator when metric is related to regression
+            emit_event(
+                'update task', status='COMPLETED',
+                identifier='{{task_id}}',
+                message=content,
+                type='IMAGE', title='{{join_plot_title}}',
+                task=dict([('id', '{{task_id}}')]),
+                operation=dict([('id', {{operation_id}})]),
+                operation_id={{operation_id}}) 
+        {%- endif %}
+        {%- endif %}
         """
 
-        code.append("""
-            # regression metrics
-            if display_text:
-                headers = {table_headers}
-                rows = [
-                    ['Maximum error', max_error(final_y_true, final_y_pred)],
-                    ['Explained variance score', 
-                        explained_variance_score(final_y_true, final_y_pred)],
-                    ['Mean squared error', 
-                        mean_squared_error(final_y_true, final_y_pred)],
-                    ['Root mean squared error', 
-                     np.sqrt(mean_squared_error(final_y_true, final_y_pred))],
-                    ['Mean absolute error', 
-                     mean_absolute_error(final_y_true, final_y_pred)],
-                    ['Median absolute error', 
-                     median_absolute_error(final_y_true, final_y_pred)],
-                    ['R^2 (coefficient of determination)', 
-                    r2_score(final_y_true, final_y_pred)],
-                ]
+        ctx = dict(is_regression=is_regression,
+                   is_classification=is_classification,
+                   is_supervised_metric=is_supervised_metric,
+                   display_text=display_text,
+                   display_image=display_image,
+                   evaluator_out=self.evaluator_out,
+                   input=self.named_inputs['input data'],
+                   metric=self.metric,
+                   prediction_attr=self.prediction_attribute,
+                   second_attr=self.second_attribute,
+                   model=self.model,
+                   model_output=self.model_out,
+                   task_id=self.parameters['task_id'],
+                   operation_id=self.parameters['operation_id'],
+                   join_plot_title=_('Prediction versus Residual'),
+                   join_plot_y_title=_('Residual'),
+                   join_plot_x_title=_('Prediction'),
+                   params_title=_('Parameters for this estimator'),
+                   params_table_headers=[_('Parameters'), _('Value')],
+                   plot_title=_('Actual versus Prediction'),
+                   plot_x_title=_('Actual'),
+                   plot_y_title=_('Prediction'),
+                   table_headers=[_('Metric'), _('Value')],
+                   title=_('Evaluation result')
+                   )
 
-                
-                if (final_y_true < 0).any() or (final_y_pred < 0).any():
-                    if '{metric}' == 'mean_squared_log_error':
-                        raise ValueError('Mean Squared Logarithmic Error cannot' 
-                            ' be used when targets contain negative values.')
-                else:
-                    rows.append(['Mean squared log error', 
-                     mean_squared_log_error(final_y_true, final_y_pred)])
-                
-
-                content = SimpleTableReport(
-                        'table table-striped table-bordered table-sm',
-                        headers, rows, title='{title}').generate()
-
-                emit_event(
-                    'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=content,
-                    type='HTML', title='{title}',
-                    task={{'id': '{task_id}'}},
-                    operation={{'id': {operation_id}}},
-                    operation_id={operation_id})
-
-
-            if len(final_y_true) < 2000 and display_image:
-                residuals = [t - p for t, p in zip(final_y_true, final_y_pred)]
-                pandas_df = pd.DataFrame.from_records(
-                    [
-                        dict(prediction=x[0], residual=x[1])
-                            for x in zip(final_y_true, residuals)
-                    ]
-                )
-
-                report = SeabornChartReport().jointplot(pandas_df, 'prediction',
-                        'residual', '{join_plot_title}',
-                        '{join_plot_x_title}', '{join_plot_y_title}', 
-                        submission_lock)
-                emit_event(
-                    'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=report,
-                    type='IMAGE', title='{join_plot_title}',
-                    task=dict(id='{task_id}'),
-                    operation=dict(id={operation_id}),
-                    operation_id={operation_id})
-
-        """)
-
-    def _get_code_for_summary(self, code):
-        """
-        Return code for model's summary (test if it is present)
-        """
-
-        if self.METRICS_LIST[self.metric][0] == 0:
-            code.append("""                               
-            # model's summary       
-            if len(final_y_true) < 2000 and display_image:
-
-                identity = range(int(max(final_y_true[-1], final_y_pred[-1])))
-                report2 = MatplotlibChartReport().plot(
-                        '{plot_title}',
-                        '{plot_x_title}',
-                        '{plot_y_title}',
-                        identity, identity, 'r.',
-                        final_y_true, final_y_pred,'b.', 
-                        submission_lock=submission_lock)
-
-                emit_event(
-                     'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=report2,
-                    type='IMAGE', title='{join_plot_title}',
-                    task=dict(id='{task_id}'),
-                    operation=dict(id={operation_id}),
-                    operation_id={operation_id})
-            """)
-
-            code.append(""" 
-            if display_text:
-                rows = []
-                headers = {params_table_headers}
-                params = {model}.get_params()
-                for p in params:
-                    rows.append([p, params[p]])
-
-                content = SimpleTableReport(
-                        'table table-striped table-bordered table-sm',
-                        headers, rows,
-                        title='{params_title}').generate()
-
-                emit_event(
-                    'update task', status='COMPLETED',
-                    identifier='{task_id}',
-                    message=content,
-                    type='HTML', title='{title}',
-                    task={{'id': '{task_id}'}},
-                    operation={{'id': {operation_id}}},
-                    operation_id={operation_id})
-        """)
+        return dedent(self.render_template(ctx))
 
 
 class ModelsEvaluationResultList:

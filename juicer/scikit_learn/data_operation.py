@@ -312,7 +312,7 @@ class DataReaderOperation(Operation):
 
             'jdbc_code': jdbc_code,
         }
-        return self.render_template(ctx)
+        return dedent(self.render_template(ctx))
 
 
 class SaveOperation(Operation):
